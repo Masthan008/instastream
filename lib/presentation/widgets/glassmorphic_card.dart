@@ -22,6 +22,7 @@ class GlassmorphicCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       margin: margin,
       child: ClipRRect(
@@ -37,8 +38,9 @@ class GlassmorphicCard extends StatelessWidget {
             padding: padding ?? const EdgeInsets.all(16.0),
             decoration: LiquidGlassTheme.glassDecoration(
               radius: radius,
-              color: color ?? LiquidGlassTheme.cardBg,
+              color: color,
               showBorder: showBorder,
+              isDark: isDark,
             ),
             child: child,
           ),

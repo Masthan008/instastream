@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -9,6 +10,7 @@ import '../providers/download_provider.dart';
 import '../widgets/custom_audio_player.dart';
 import '../widgets/custom_video_player.dart';
 import '../widgets/glassmorphic_card.dart';
+import 'package:audiotags/audiotags.dart' as at;
 
 class GalleryScreen extends StatefulWidget {
   const GalleryScreen({Key? key}) : super(key: key);
@@ -22,6 +24,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
   String? _currentlyPlayingAudioPath;
   String? _currentlyPlayingAudioTitle;
   final FFmpegService _ffmpeg = FFmpegService();
+  bool _isShuffle = false;
+  bool _isRepeat = false;
 
   @override
   Widget build(BuildContext context) {
@@ -80,10 +84,57 @@ class _GalleryScreenState extends State<GalleryScreen> {
         if (!_showVideos && _currentlyPlayingAudioPath != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-            child: CustomAudioPlayer(
-              key: ValueKey(_currentlyPlayingAudioPath),
-              filePath: _currentlyPlayingAudioPath!,
-              title: _currentlyPlayingAudioTitle ?? 'Audio Playback',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CustomAudioPlayer(
+                  key: ValueKey(_currentlyPlayingAudioPath),
+                  filePath: _currentlyPlayingAudioPath!,
+                  title: _currentlyPlayingAudioTitle ?? 'Audio Playback',
+                  onCompleted: () {
+                    _playNextAudio(filteredTasks);
+                  },
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            Icons.shuffle,
+                            color: _isShuffle ? LiquidGlassTheme.primaryGreen : Colors.grey,
+                          ),
+                          tooltip: 'Shuffle Play',
+                          onPressed: () {
+                            setState(() {
+                              _isShuffle = !_isShuffle;
+                            });
+                          },
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.repeat,
+                            color: _isRepeat ? LiquidGlassTheme.primaryGreen : Colors.grey,
+                          ),
+                          tooltip: 'Repeat Playlist',
+                          onPressed: () {
+                            setState(() {
+                              _isRepeat = !_isRepeat;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.skip_next, size: 18),
+                      label: const Text('Next Track', style: TextStyle(fontSize: 12)),
+                      onPressed: () => _playNextAudio(filteredTasks),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
 
@@ -232,6 +283,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
                           tooltip: 'Convert to Audio',
                           onPressed: () {
                             _convertToAudio(task, provider);
+                          },
+                        ),
+                      if (task.type == DownloadType.audio)
+                        IconButton(
+                          icon: const Icon(Icons.edit_note_rounded, color: LiquidGlassTheme.primaryGreen, size: 22),
+                          tooltip: 'Edit Tags',
+                          onPressed: () {
+                            _showTagEditor(context, task, provider);
                           },
                         ),
                       IconButton(
@@ -447,4 +506,271 @@ class _GalleryScreenState extends State<GalleryScreen> {
       );
     }
   }
+
+  void _showTagEditor(BuildContext context, DownloadTask task, DownloadProvider provider) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _TagEditorDialog(task: task, provider: provider),
+    );
+  }
+
+  void _playNextAudio(List<DownloadTask> playlist) {
+    if (playlist.isEmpty) return;
+
+    final currentIndex = playlist.indexWhere((t) => t.filePath == _currentlyPlayingAudioPath);
+    if (currentIndex == -1) return;
+
+    int nextIndex;
+    if (_isShuffle && playlist.length > 1) {
+      nextIndex = Random().nextInt(playlist.length);
+      // Try to avoid playing the same track immediately
+      if (nextIndex == currentIndex) {
+        nextIndex = (nextIndex + 1) % playlist.length;
+      }
+    } else {
+      nextIndex = currentIndex + 1;
+    }
+
+    if (nextIndex < playlist.length) {
+      setState(() {
+        _currentlyPlayingAudioPath = playlist[nextIndex].filePath;
+        _currentlyPlayingAudioTitle = playlist[nextIndex].title;
+      });
+    } else {
+      if (_isRepeat) {
+        setState(() {
+          _currentlyPlayingAudioPath = playlist[0].filePath;
+          _currentlyPlayingAudioTitle = playlist[0].title;
+        });
+      } else {
+        setState(() {
+          _currentlyPlayingAudioPath = null;
+        });
+      }
+    }
+  }
 }
+
+class _TagEditorDialog extends StatefulWidget {
+  final DownloadTask task;
+  final DownloadProvider provider;
+
+  const _TagEditorDialog({
+    Key? key,
+    required this.task,
+    required this.provider,
+  }) : super(key: key);
+
+  @override
+  State<_TagEditorDialog> createState() => _TagEditorDialogState();
+}
+
+class _TagEditorDialogState extends State<_TagEditorDialog> {
+  late TextEditingController _titleController;
+  late TextEditingController _artistController;
+  late TextEditingController _albumController;
+  late TextEditingController _genreController;
+  bool _isLoading = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.task.title);
+    _artistController = TextEditingController();
+    _albumController = TextEditingController();
+    _genreController = TextEditingController();
+    _loadTags();
+  }
+
+  Future<void> _loadTags() async {
+    try {
+      final tag = await at.AudioTags.read(widget.task.filePath!);
+      if (tag != null) {
+        setState(() {
+          if (tag.title != null && tag.title!.isNotEmpty) {
+            _titleController.text = tag.title!;
+          }
+          _artistController.text = tag.trackArtist ?? '';
+          _albumController.text = tag.album ?? '';
+          _genreController.text = tag.genre ?? '';
+        });
+      }
+    } catch (e) {
+      // Ignore reading errors, fallback to default title
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _saveTags() async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final tag = at.Tag(
+        title: _titleController.text,
+        trackArtist: _artistController.text,
+        album: _albumController.text,
+        genre: _genreController.text,
+        pictures: const [],
+      );
+      await at.AudioTags.write(widget.task.filePath!, tag);
+
+      // Update in Hive DB
+      final updatedTask = DownloadTask(
+        id: widget.task.id,
+        url: widget.task.url,
+        title: _titleController.text,
+        thumbnail: widget.task.thumbnail,
+        type: widget.task.type,
+        selectedFormat: widget.task.selectedFormat,
+        status: widget.task.status,
+        progress: widget.task.progress,
+        speed: widget.task.speed,
+        eta: widget.task.eta,
+        filePath: widget.task.filePath,
+        error: widget.task.error,
+        createdAt: widget.task.createdAt,
+      );
+      await widget.provider.addCompletedTask(updatedTask);
+
+      Navigator.pop(context); // Close dialog
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ID3 tags saved successfully!')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save ID3 tags: $e')),
+      );
+    } finally {
+      setState(() {
+        _isSaving = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _artistController.dispose();
+    _albumController.dispose();
+    _genreController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return AlertDialog(
+      backgroundColor: Colors.transparent,
+      contentPadding: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      content: GlassmorphicCard(
+        padding: const EdgeInsets.all(20),
+        radius: 24,
+        child: _isLoading
+            ? const SizedBox(
+                height: 200,
+                child: Center(
+                  child: CircularProgressIndicator(color: LiquidGlassTheme.primaryBlue),
+                ),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Edit MP3 Metadata',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: isDark ? Colors.white : LiquidGlassTheme.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildTextField('Title', _titleController, isDark),
+                  const SizedBox(height: 12),
+                  _buildTextField('Artist', _artistController, isDark),
+                  const SizedBox(height: 12),
+                  _buildTextField('Album', _albumController, isDark),
+                  const SizedBox(height: 12),
+                  _buildTextField('Genre', _genreController, isDark),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: _isSaving ? null : () => Navigator.pop(context),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(color: LiquidGlassTheme.textLight),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: _isSaving ? null : _saveTags,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            gradient: LiquidGlassTheme.brandGradient,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: _isSaving
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text(
+                                  'Save Tags',
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                ),
+                        ),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(String label, TextEditingController controller, bool isDark) {
+    return TextField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(fontSize: 13, color: LiquidGlassTheme.textLight),
+        filled: true,
+        fillColor: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.03),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.withOpacity(0.1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: LiquidGlassTheme.primaryBlue, width: 1.5),
+        ),
+      ),
+    );
+  }
+}
+

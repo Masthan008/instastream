@@ -21,10 +21,13 @@ class InstaStreamApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Provider.of<DownloadProvider>(context).isDarkMode;
     return MaterialApp(
       title: 'InstaStream Downloader',
       debugShowCheckedModeBanner: false,
       theme: LiquidGlassTheme.lightTheme,
+      darkTheme: LiquidGlassTheme.darkTheme,
+      themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
       home: const SplashScreen(),
     );
   }

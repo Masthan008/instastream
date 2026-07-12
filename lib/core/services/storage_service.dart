@@ -40,4 +40,12 @@ class StorageService {
   Stream<BoxEvent> watchTasks() {
     return _box.watch();
   }
+
+  bool getThemePreference() {
+    return _box.get('is_dark_mode', defaultValue: false) as bool;
+  }
+
+  Future<void> saveThemePreference(bool isDark) async {
+    await _box.put('is_dark_mode', isDark);
+  }
 }

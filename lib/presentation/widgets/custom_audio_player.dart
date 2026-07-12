@@ -7,11 +7,13 @@ import '../../core/constants/theme.dart';
 class CustomAudioPlayer extends StatefulWidget {
   final String filePath;
   final String title;
+  final VoidCallback? onCompleted;
 
   const CustomAudioPlayer({
     Key? key,
     required this.filePath,
     required this.title,
+    this.onCompleted,
   }) : super(key: key);
 
   @override
@@ -45,6 +47,9 @@ class _CustomAudioPlayerState extends State<CustomAudioPlayer> {
           setState(() {
             _isPlaying = state.playing;
           });
+          if (state.processingState == ProcessingState.completed && widget.onCompleted != null) {
+            widget.onCompleted!();
+          }
         }
       });
     } catch (e) {
@@ -86,7 +91,7 @@ class _CustomAudioPlayerState extends State<CustomAudioPlayer> {
             widget.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: LiquidGlassTheme.textDark),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           const SizedBox(height: 16),
           StreamBuilder<Duration?>(

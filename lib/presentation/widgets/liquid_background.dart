@@ -8,12 +8,18 @@ class LiquidBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseGradient = isDark ? LiquidGlassTheme.darkBackgroundGradient : LiquidGlassTheme.backgroundGradient;
+    final topGlowColor = isDark ? const Color(0xFF7C3AED).withOpacity(0.18) : LiquidGlassTheme.primaryGreen.withOpacity(0.18);
+    final bottomGlowColor = isDark ? const Color(0xFF6366F1).withOpacity(0.15) : LiquidGlassTheme.primaryBlue.withOpacity(0.15);
+    final centerGlowColor = isDark ? const Color(0xFFEC4899).withOpacity(0.08) : LiquidGlassTheme.secondaryGreen.withOpacity(0.08);
+
     return Stack(
       children: [
         // 1. Background base gradient
         Container(
-          decoration: const BoxDecoration(
-            gradient: LiquidGlassTheme.backgroundGradient,
+          decoration: BoxDecoration(
+            gradient: baseGradient,
           ),
         ),
         
@@ -26,7 +32,7 @@ class LiquidBackground extends StatelessWidget {
             height: 300,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: LiquidGlassTheme.primaryGreen.withOpacity(0.18),
+              color: topGlowColor,
             ),
           ),
         ),
@@ -40,7 +46,7 @@ class LiquidBackground extends StatelessWidget {
             height: 350,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: LiquidGlassTheme.primaryBlue.withOpacity(0.15),
+              color: bottomGlowColor,
             ),
           ),
         ),
@@ -54,7 +60,7 @@ class LiquidBackground extends StatelessWidget {
             height: 250,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: LiquidGlassTheme.secondaryGreen.withOpacity(0.08),
+              color: centerGlowColor,
             ),
           ),
         ),

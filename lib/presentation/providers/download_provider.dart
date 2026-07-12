@@ -17,6 +17,7 @@ class DownloadProvider extends ChangeNotifier {
   bool _isAnalyzing = false;
   MediaMetadata? _analyzedMetadata;
   String? _errorMessage;
+  bool _isDarkMode = false;
 
   DownloadProvider() {
     _downloader = DownloaderService(_storage);
@@ -27,9 +28,11 @@ class DownloadProvider extends ChangeNotifier {
   bool get isAnalyzing => _isAnalyzing;
   MediaMetadata? get analyzedMetadata => _analyzedMetadata;
   String? get errorMessage => _errorMessage;
+  bool get isDarkMode => _isDarkMode;
 
   Future<void> _init() async {
     await _storage.init();
+    _isDarkMode = _storage.getThemePreference();
     _loadTasks();
     // Watch storage box and update tasks reactively
     _storage.watchTasks().listen((_) {
@@ -135,6 +138,12 @@ class DownloadProvider extends ChangeNotifier {
   Future<void> addCompletedTask(DownloadTask task) async {
     await _storage.saveTask(task);
     _loadTasks();
+  }
+
+  Future<void> toggleTheme(bool value) async {
+    _isDarkMode = value;
+    await _storage.saveThemePreference(value);
+    notifyListeners();
   }
 
   @override

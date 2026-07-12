@@ -40,14 +40,14 @@ class SettingsScreen extends StatelessWidget {
                     const SizedBox(width: 16),
                     const Text(
                       'Storage Location',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: LiquidGlassTheme.textDark),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 const Text(
                   'Media files are saved locally to your device\'s standard storage directory under the folder:',
-                  style: TextStyle(color: LiquidGlassTheme.textLight, fontSize: 14),
+                  style: TextStyle(fontSize: 14),
                 ),
                 const SizedBox(height: 8),
                 Container(
@@ -58,13 +58,53 @@ class SettingsScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Text(
-                    'Downloads/InstaTube (Android)\nDocument Sandbox (iOS)',
+                    'Downloads/InstaStream (Android)\nDocument Sandbox (iOS)',
                     style: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 12,
-                      color: LiquidGlassTheme.textDark,
                     ),
                   ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Theme selection card
+          GlassmorphicCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: LiquidGlassTheme.primaryBlue.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        downloadProvider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
+                        color: LiquidGlassTheme.primaryBlue,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Text(
+                      'App Theme',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: LiquidGlassTheme.primaryGreen,
+                  title: const Text('Obsidian Dark Mode', style: TextStyle(fontWeight: FontWeight.w500)),
+                  subtitle: const Text('Toggle between Light and premium Dark mode styles', style: TextStyle(fontSize: 12)),
+                  value: downloadProvider.isDarkMode,
+                  onChanged: (value) {
+                    downloadProvider.toggleTheme(value);
+                  },
                 ),
               ],
             ),
@@ -89,7 +129,7 @@ class SettingsScreen extends StatelessWidget {
                     const SizedBox(width: 16),
                     const Text(
                       'Data Management',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: LiquidGlassTheme.textDark),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ],
                 ),
@@ -97,7 +137,7 @@ class SettingsScreen extends StatelessWidget {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.delete_sweep_outlined, color: Colors.redAccent),
-                  title: const Text('Clear Download History', style: TextStyle(fontWeight: FontWeight.w500, color: LiquidGlassTheme.textDark)),
+                  title: const Text('Clear Download History', style: TextStyle(fontWeight: FontWeight.w500)),
                   subtitle: const Text('Deletes history list. Downloaded files remain on device.', style: TextStyle(fontSize: 12)),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 14),
                   onTap: () {
@@ -115,13 +155,13 @@ class SettingsScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'About InstaTube',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: LiquidGlassTheme.textDark),
+                  'About InstaStream',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 SizedBox(height: 12),
                 Text(
-                  'InstaTube Downloader is a premium, client-side utility built using Flutter. It extracts streams locally to deliver an ad-free experience without server-side tracking.',
-                  style: TextStyle(color: LiquidGlassTheme.textLight, fontSize: 14, height: 1.4),
+                  'InstaStream Downloader is a premium, client-side utility built using Flutter. It extracts streams locally to deliver an ad-free experience without server-side tracking.',
+                  style: TextStyle(fontSize: 14, height: 1.4),
                 ),
                 SizedBox(height: 16),
                 Divider(),
@@ -129,8 +169,8 @@ class SettingsScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Version', style: TextStyle(color: LiquidGlassTheme.textLight)),
-                    Text('1.0.0 (FFmpeg enabled)', style: TextStyle(fontWeight: FontWeight.bold, color: LiquidGlassTheme.textDark)),
+                    Text('Version'),
+                    Text('1.0.0 (FFmpeg enabled)', style: TextStyle(fontWeight: FontWeight.bold)),
                   ],
                 )
               ],

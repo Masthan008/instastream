@@ -48,6 +48,7 @@ dependencies:
   google_fonts: ^8.1.0
   provider: ^6.1.5+1
   ffmpeg_kit_flutter_new: ^4.4.0
+  audiotags: ^1.4.5
 
 dev_dependencies:
   flutter_test:

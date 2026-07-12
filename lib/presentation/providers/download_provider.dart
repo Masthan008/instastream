@@ -132,6 +132,11 @@ class DownloadProvider extends ChangeNotifier {
     _loadTasks();
   }
 
+  Future<void> addCompletedTask(DownloadTask task) async {
+    await _storage.saveTask(task);
+    _loadTasks();
+  }
+
   @override
   void dispose() {
     _ytRepo.close();

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/constants/theme.dart';
 import '../../data/models/download_task.dart';
+import '../../core/services/ffmpeg_service.dart';
 import '../providers/download_provider.dart';
 import '../widgets/custom_audio_player.dart';
 import '../widgets/custom_video_player.dart';
@@ -20,6 +21,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   bool _showVideos = true;
   String? _currentlyPlayingAudioPath;
   String? _currentlyPlayingAudioTitle;
+  final FFmpegService _ffmpeg = FFmpegService();
 
   @override
   Widget build(BuildContext context) {
@@ -224,6 +226,14 @@ class _GalleryScreenState extends State<GalleryScreen> {
                           Share.shareXFiles([XFile(task.filePath!)], text: task.title);
                         },
                       ),
+                      if (task.type == DownloadType.video)
+                        IconButton(
+                          icon: const Icon(Icons.music_note_outlined, color: LiquidGlassTheme.primaryGreen, size: 20),
+                          tooltip: 'Convert to Audio',
+                          onPressed: () {
+                            _convertToAudio(task, provider);
+                          },
+                        ),
                       IconButton(
                         icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
                         onPressed: () {
@@ -359,5 +369,82 @@ class _GalleryScreenState extends State<GalleryScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _convertToAudio(DownloadTask task, DownloadProvider provider) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return WillPopScope(
+          onWillPop: () async => false,
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            content: const Row(
+              children: [
+                CircularProgressIndicator(color: LiquidGlassTheme.primaryBlue),
+                SizedBox(width: 20),
+                Expanded(
+                  child: Text(
+                    'Extracting Audio with FFmpeg...',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: LiquidGlassTheme.textDark),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      final inputPath = task.filePath!;
+      final parentDir = File(inputPath).parent.path;
+      final originalName = File(inputPath).path.split(Platform.isWindows ? '\\' : '/').last;
+      final nameWithoutExt = originalName.contains('.')
+          ? originalName.substring(0, originalName.lastIndexOf('.'))
+          : originalName;
+      final outputPath = '$parentDir/${nameWithoutExt}_extracted.mp3';
+
+      final success = await _ffmpeg.convertToMp3(
+        inputPath: inputPath,
+        outputPath: outputPath,
+        bitrateKbps: 256,
+      );
+
+      Navigator.pop(context); // Close loading dialog
+
+      if (success) {
+        // Register converted audio task in DB
+        final newTask = DownloadTask(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          url: task.url,
+          title: '${task.title} (Extracted Audio)',
+          thumbnail: task.thumbnail,
+          type: DownloadType.audio,
+          selectedFormat: 'MP3 (Extracted)',
+          status: DownloadStatus.completed,
+          filePath: outputPath,
+          progress: 1.0,
+          speed: 'Converted',
+        );
+
+        await provider.addCompletedTask(newTask);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Audio successfully extracted and saved to Gallery!')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to extract audio from video.')),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog if crashed
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error converting video: $e')),
+      );
+    }
   }
 }

@@ -1,0 +1,299 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:provider/provider.dart';
+import '../../core/constants/theme.dart';
+import '../providers/download_provider.dart';
+import '../widgets/glassmorphic_card.dart';
+
+class BrowserScreen extends StatefulWidget {
+  const BrowserScreen({Key? key}) : super(key: key);
+
+  @override
+  State<BrowserScreen> createState() => _BrowserScreenState();
+}
+
+class _BrowserScreenState extends State<BrowserScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  InAppWebViewController? _webViewController;
+  String _currentUrl = 'https://www.google.com';
+  bool _isLoading = false;
+  bool _canGoBack = false;
+  bool _canGoForward = false;
+  bool _showDownloadBtn = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _navigateToUrl(String input) {
+    if (input.trim().isEmpty) return;
+
+    String url = input.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      if (url.contains('.') && !url.contains(' ')) {
+        url = 'https://$url';
+      } else {
+        url = 'https://www.google.com/search?q=${Uri.encodeComponent(url)}';
+      }
+    }
+
+    _webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+  }
+
+  void _detectMedia(String url) {
+    final bool hasMedia = url.contains('youtube.com/watch') ||
+        url.contains('youtu.be/') ||
+        url.contains('instagram.com/reel/') ||
+        url.contains('instagram.com/p/');
+    setState(() {
+      _showDownloadBtn = hasMedia;
+    });
+  }
+
+  Future<void> _triggerExtraction(BuildContext context, DownloadProvider provider) async {
+    if (_webViewController == null) return;
+    
+    final currentUrl = (await _webViewController!.getUrl())?.toString() ?? '';
+    if (currentUrl.isEmpty) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(color: LiquidGlassTheme.primaryGreen),
+            SizedBox(width: 16),
+            Expanded(child: Text('Extracting media contents...')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      if (currentUrl.contains('youtube.com') || currentUrl.contains('youtu.be')) {
+        Navigator.pop(context); // Close loading dialog
+        // Trigger standard analytical extractor on the URL
+        await provider.analyzeLink(currentUrl);
+        // This will trigger the picker bottom sheet in the layout screen
+        _showDashboardRedirectToast();
+      } else if (currentUrl.contains('instagram.com')) {
+        // Run Javascript to scrape DOM video or image elements
+        final result = await _webViewController!.evaluateJavascript(source: """
+          (function() {
+            var video = document.querySelector('video');
+            if (video && video.src) {
+              return { 'url': video.src, 'type': 'video', 'title': document.title };
+            }
+            var img = document.querySelector('article img');
+            if (img && img.src) {
+              return { 'url': img.src, 'type': 'image', 'title': document.title };
+            }
+            // Generic check if no article found
+            var anyImg = document.querySelector('img[style*="object-fit: cover"]');
+            if (anyImg && anyImg.src) {
+              return { 'url': anyImg.src, 'type': 'image', 'title': document.title };
+            }
+            return null;
+          })()
+        """);
+
+        Navigator.pop(context); // Close loading dialog
+
+        if (result != null && result['url'] != null) {
+          final String directUrl = result['url'];
+          final String type = result['type'];
+          final String title = result['title'] ?? 'Instagram Post';
+          
+          provider.applyDirectInstagramLink(
+            currentUrl, 
+            directUrl, 
+            type == 'video',
+            title: title,
+          );
+          _showDashboardRedirectToast();
+        } else {
+          _showErrorDialog('Could not find media content in the page. Please ensure the video has finished loading.');
+        }
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      _showErrorDialog('Extraction failed: $e');
+    }
+  }
+
+  void _showDashboardRedirectToast() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Media extracted! Go to the Dashboard tab to select format & download.'),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Dashboard',
+          textColor: Colors.white,
+          onPressed: () {
+            // Layout handles tabs navigation.
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showErrorDialog(String msg) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Extraction Error'),
+        content: Text(msg),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK', style: TextStyle(color: LiquidGlassTheme.primaryGreen)),
+          )
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final downloadProvider = Provider.of<DownloadProvider>(context, listen: false);
+
+    return Scaffold(
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              // Browser control bar
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                color: Colors.white.withOpacity(0.8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.arrow_back_ios, size: 18, color: _canGoBack ? LiquidGlassTheme.textDark : Colors.grey),
+                      onPressed: _canGoBack
+                          ? () => _webViewController?.goBack()
+                          : null,
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.arrow_forward_ios, size: 18, color: _canGoForward ? LiquidGlassTheme.textDark : Colors.grey),
+                      onPressed: _canGoForward
+                          ? () => _webViewController?.goForward()
+                          : null,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Container(
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.04),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          style: const TextStyle(fontSize: 13, color: LiquidGlassTheme.textDark),
+                          decoration: InputDecoration(
+                            hintText: 'Search or enter address...',
+                            hintStyle: const TextStyle(color: LiquidGlassTheme.textLight, fontSize: 13),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            border: InputBorder.none,
+                            suffixIcon: _isLoading
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: Center(
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: LiquidGlassTheme.primaryGreen),
+                                    ),
+                                  )
+                                : IconButton(
+                                    padding: EdgeInsets.zero,
+                                    icon: const Icon(Icons.refresh, size: 16, color: LiquidGlassTheme.textLight),
+                                    onPressed: () => _webViewController?.reload(),
+                                  ),
+                          ),
+                          onSubmitted: _navigateToUrl,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // WebView container
+              Expanded(
+                child: InAppWebView(
+                  initialUrlRequest: URLRequest(url: WebUri(_currentUrl)),
+                  initialSettings: InAppWebViewSettings(
+                    javaScriptEnabled: true,
+                    allowsBackForwardNavigationGestures: true,
+                    userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                  ),
+                  onWebViewCreated: (controller) {
+                    _webViewController = controller;
+                  },
+                  onLoadStart: (controller, url) {
+                    setState(() {
+                      _isLoading = true;
+                      _currentUrl = url?.toString() ?? '';
+                      _searchController.text = _currentUrl;
+                    });
+                  },
+                  onLoadStop: (controller, url) async {
+                    final canBack = await controller.canGoBack();
+                    final canForward = await controller.canGoForward();
+                    final currentUrlStr = url?.toString() ?? '';
+                    setState(() {
+                      _isLoading = false;
+                      _canGoBack = canBack;
+                      _canGoForward = canForward;
+                      _currentUrl = currentUrlStr;
+                      _searchController.text = _currentUrl;
+                    });
+                    _detectMedia(currentUrlStr);
+                  },
+                  onUpdateVisitedHistory: (controller, url, androidIsReload) {
+                    final currentUrlStr = url?.toString() ?? '';
+                    _detectMedia(currentUrlStr);
+                  },
+                ),
+              ),
+            ],
+          ),
+
+          // Glowing Floating "Liquid Download" button
+          if (_showDownloadBtn)
+            Positioned(
+              bottom: 24,
+              right: 24,
+              child: GestureDetector(
+                onTap: () => _triggerExtraction(context, downloadProvider),
+                child: Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LiquidGlassTheme.brandGradient,
+                    boxShadow: [
+                      BoxShadow(
+                        color: LiquidGlassTheme.primaryGreen.withOpacity(0.4),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 4),
+                      )
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.offline_share_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

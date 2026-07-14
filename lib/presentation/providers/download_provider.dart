@@ -103,6 +103,16 @@ class DownloadProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void applyInstagramSlideshow(String originalUrl, List<Map<String, dynamic>> slides, String title) {
+    final meta = _igRepo.buildMetadataFromSlides(
+      originalUrl: originalUrl,
+      slides: slides,
+      title: title,
+    );
+    _analyzedMetadata = meta;
+    notifyListeners();
+  }
+
   Future<void> triggerDownload(FormatOption format) async {
     if (_analyzedMetadata == null) return;
     

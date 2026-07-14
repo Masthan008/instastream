@@ -83,6 +83,34 @@ class _BrowserScreenState extends State<BrowserScreen> {
         // Run Javascript to scrape DOM video or image elements
         final result = await _webViewController!.evaluateJavascript(source: """
           (function() {
+            // Find all videos and images within the post container
+            var post = document.querySelector('article') || document;
+            var slides = [];
+            
+            // Get all videos
+            var videos = post.querySelectorAll('video');
+            videos.forEach(function(v) {
+              if (v.src && !v.src.startsWith('blob:') && slides.indexOf(v.src) === -1) {
+                slides.push({ 'url': v.src, 'type': 'video' });
+              }
+            });
+            
+            // Get all slide images
+            var images = post.querySelectorAll('ul li img');
+            if (images.length === 0) {
+              images = post.querySelectorAll('img[style*="object-fit: cover"]');
+            }
+            images.forEach(function(img) {
+              if (img.src && slides.map(function(s) { return s.url; }).indexOf(img.src) === -1) {
+                slides.push({ 'url': img.src, 'type': 'image' });
+              }
+            });
+            
+            if (slides.length > 0) {
+              return { 'slides': slides, 'title': document.title };
+            }
+            
+            // Fallback for single item
             var video = document.querySelector('video');
             if (video && video.src) {
               return { 'url': video.src, 'type': 'video', 'title': document.title };
@@ -91,31 +119,36 @@ class _BrowserScreenState extends State<BrowserScreen> {
             if (img && img.src) {
               return { 'url': img.src, 'type': 'image', 'title': document.title };
             }
-            // Generic check if no article found
-            var anyImg = document.querySelector('img[style*="object-fit: cover"]');
-            if (anyImg && anyImg.src) {
-              return { 'url': anyImg.src, 'type': 'image', 'title': document.title };
-            }
             return null;
           })()
         """);
 
         Navigator.pop(context); // Close loading dialog
 
-        if (result != null && result['url'] != null) {
-          final String directUrl = result['url'];
-          final String type = result['type'];
+        if (result != null) {
           final String title = result['title'] ?? 'Instagram Post';
-          
-          provider.applyDirectInstagramLink(
-            currentUrl, 
-            directUrl, 
-            type == 'video',
-            title: title,
-          );
-          _showDashboardRedirectToast();
+          if (result['slides'] != null) {
+            // It is a slideshow/carousel!
+            final List<dynamic> rawSlides = result['slides'];
+            final List<Map<String, dynamic>> slides = rawSlides.map((s) => Map<String, dynamic>.from(s as Map)).toList();
+            provider.applyInstagramSlideshow(currentUrl, slides, title);
+            _showDashboardRedirectToast();
+          } else if (result['url'] != null) {
+            // It is a single media item
+            final String directUrl = result['url'];
+            final String type = result['type'];
+            provider.applyDirectInstagramLink(
+              currentUrl, 
+              directUrl, 
+              type == 'video',
+              title: title,
+            );
+            _showDashboardRedirectToast();
+          } else {
+            _showErrorDialog('Could not find media content in the page.');
+          }
         } else {
-          _showErrorDialog('Could not find media content in the page. Please ensure the video has finished loading.');
+          _showErrorDialog('Could not find media content in the page. Please ensure the post has loaded.');
         }
       }
     } catch (e) {

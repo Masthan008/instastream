@@ -44,10 +44,14 @@ class DownloaderService {
     _cancelTokens[taskId] = cancelToken;
 
     try {
-      // Find standard sandboxed directory (bypasses Scoped Storage errors)
-      final baseDir = await getApplicationDocumentsDirectory();
-
-      final downloadsDir = Directory('${baseDir.path}/InstaTube');
+      // Save directly to public Downloads folder on Android, sandboxed on iOS
+      Directory downloadsDir;
+      if (Platform.isAndroid) {
+        downloadsDir = Directory('/storage/emulated/0/Download/InstaStream');
+      } else {
+        final baseDir = await getApplicationDocumentsDirectory();
+        downloadsDir = Directory('${baseDir.path}/InstaStream');
+      }
       if (!await downloadsDir.exists()) {
         await downloadsDir.create(recursive: true);
       }
@@ -232,6 +236,31 @@ class DownloaderService {
           }
           await _storage.saveTask(task);
           onProgressUpdate(task);
+        } else if (format.id.startsWith('subtitles_')) {
+          // Download and parse YouTube Subtitles
+          task.status = DownloadStatus.downloading;
+          task.progress = 0.3;
+          task.speed = 'Fetching subtitles...';
+          await _storage.saveTask(task);
+          onProgressUpdate(task);
+
+          final yt = yt_exp.YoutubeExplode();
+          final trackInfo = format.originalStreamInfo as yt_exp.ClosedCaptionTrackInfo;
+          final closedCaptions = await yt.videos.closedCaptions.get(trackInfo);
+          yt.close();
+
+          final srtContent = _convertToSrt(closedCaptions.captions);
+
+          final finalOutputPath = '${downloadsDir.path}/$cleanTitle.${trackInfo.language.code}.srt';
+          final srtFile = File(finalOutputPath);
+          await srtFile.writeAsString(srtContent);
+
+          task.status = DownloadStatus.completed;
+          task.filePath = finalOutputPath;
+          task.progress = 1.0;
+          task.speed = 'Done';
+          await _storage.saveTask(task);
+          onProgressUpdate(task);
         }
 
       } else if (metadata.sourceType == 'instagram') {
@@ -339,7 +368,7 @@ class DownloaderService {
             final double speedMbps = (speedBytesPerMs * 1000) / (1024 * 1024);
             final String speedLabel = '${speedMbps.toStringAsFixed(1)} MB/s';
 
-            final double progress = received / total;
+            final double progress = (total > 0) ? (received / total).clamp(0.0, 1.0) : 0.0;
             final remainingBytes = total - received;
             final etaSeconds = speedBytesPerMs > 0 ? (remainingBytes / speedBytesPerMs / 1000).round() : 0;
             final String etaLabel = _formatDuration(Duration(seconds: etaSeconds));
@@ -362,5 +391,28 @@ class DownloaderService {
     final mins = duration.inMinutes.toString().padLeft(2, '0');
     final secs = (duration.inSeconds % 60).toString().padLeft(2, '0');
     return '$mins:$secs';
+  }
+
+  String _convertToSrt(List<yt_exp.ClosedCaption> captions) {
+    final buffer = StringBuffer();
+    for (int i = 0; i < captions.length; i++) {
+      final caption = captions[i];
+      final start = caption.offset;
+      final end = caption.offset + caption.duration;
+
+      buffer.writeln('${i + 1}');
+      buffer.writeln('${_formatSrtTime(start)} --> ${_formatSrtTime(end)}');
+      buffer.writeln(caption.text);
+      buffer.writeln();
+    }
+    return buffer.toString();
+  }
+
+  String _formatSrtTime(Duration duration) {
+    final hours = duration.inHours.toString().padLeft(2, '0');
+    final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
+    final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
+    final milliseconds = (duration.inMilliseconds % 1000).toString().padLeft(3, '0');
+    return '$hours:$minutes:$seconds,$milliseconds';
   }
 }

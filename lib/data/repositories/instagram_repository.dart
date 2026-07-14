@@ -133,6 +133,66 @@ class InstagramRepository {
     );
   }
 
+  MediaMetadata buildMetadataFromSlides({
+    required String originalUrl,
+    required List<Map<String, dynamic>> slides,
+    required String title,
+  }) {
+    final List<FormatOption> formats = [];
+    for (int i = 0; i < slides.length; i++) {
+      final slide = slides[i];
+      final url = slide['url'] as String;
+      final isVideo = slide['type'] == 'video';
+
+      if (isVideo) {
+        formats.add(
+          FormatOption(
+            id: 'ig_slide_${i}_video',
+            label: 'Slide ${i + 1} - Video (HD MP4)',
+            ext: 'mp4',
+            sizeLabel: 'Unknown Size',
+            qualityValue: 720,
+            isAudioOnly: false,
+            originalStreamInfo: url,
+          ),
+        );
+        formats.add(
+          FormatOption(
+            id: 'ig_slide_${i}_audio',
+            label: 'Slide ${i + 1} - Audio (MP3)',
+            ext: 'mp3',
+            sizeLabel: 'Unknown Size',
+            qualityValue: 256,
+            isAudioOnly: true,
+            originalStreamInfo: url,
+          ),
+        );
+      } else {
+        formats.add(
+          FormatOption(
+            id: 'ig_slide_${i}_image',
+            label: 'Slide ${i + 1} - Image (JPEG)',
+            ext: 'jpg',
+            sizeLabel: 'Unknown Size',
+            qualityValue: 1080,
+            isAudioOnly: false,
+            originalStreamInfo: url,
+          ),
+        );
+      }
+    }
+
+    return MediaMetadata(
+      url: originalUrl,
+      title: title.isNotEmpty ? _truncateTitle(title) : 'Instagram Slideshow',
+      author: 'instagram_user',
+      duration: Duration.zero,
+      thumbnailUrl: formats.isNotEmpty ? (formats.first.originalStreamInfo as String) : '',
+      sourceType: 'instagram',
+      formats: formats,
+    );
+  }
+
   String _cleanInstagramUrl(String url) {
     try {
       final uri = Uri.parse(url);

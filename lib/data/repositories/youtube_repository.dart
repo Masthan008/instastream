@@ -15,6 +15,23 @@ class YoutubeRepository {
 
       final List<FormatOption> formats = [];
 
+      try {
+        final ccManifest = await _yt.videos.closedCaptions.getManifest(videoId);
+        for (var track in ccManifest.tracks) {
+          formats.add(FormatOption(
+            id: 'subtitles_${track.language.code}',
+            label: 'Subtitles - ${track.language.name} (.SRT)',
+            ext: 'srt',
+            sizeLabel: '0.1 MB',
+            qualityValue: 0,
+            isAudioOnly: false,
+            originalStreamInfo: track,
+          ));
+        }
+      } catch (e) {
+        // Ignore if no captions available
+      }
+
       // 1. Progressive streams (Video + Audio combined, max 720p)
       for (var stream in manifest.muxed) {
         final size = stream.size.totalMegaBytes.toStringAsFixed(1);

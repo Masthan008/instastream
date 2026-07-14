@@ -5,6 +5,7 @@ import 'browser_screen.dart';
 import 'dashboard_screen.dart';
 import 'gallery_screen.dart';
 import 'settings_screen.dart';
+import 'status_saver_screen.dart';
 
 class MainLayoutScreen extends StatefulWidget {
   const MainLayoutScreen({Key? key}) : super(key: key);
@@ -19,6 +20,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
   final List<Widget> _screens = const [
     DashboardScreen(),
     BrowserScreen(),
+    StatusSaverScreen(),
     GalleryScreen(),
     SettingsScreen(),
   ];
@@ -65,6 +67,11 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
               icon: Icon(Icons.language_outlined),
               activeIcon: Icon(Icons.language_rounded),
               label: 'Browser',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.star_border_rounded),
+              activeIcon: Icon(Icons.star_rounded),
+              label: 'Statuses',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.photo_library_outlined),

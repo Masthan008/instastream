@@ -537,6 +537,17 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     );
   }
 
+  double _getSafeProgress(double val) {
+    if (val.isNaN || val.isInfinite) return 0.0;
+    return val.clamp(0.0, 1.0);
+  }
+
+  String _getProgressPercent(double val) {
+    if (val.isNaN || val.isInfinite) return '0%';
+    final pct = (val * 100).clamp(0.0, 100.0);
+    return '${pct.toStringAsFixed(0)}%';
+  }
+
   Widget _buildActiveDownloadItem(DownloadTask task, DownloadProvider provider) {
     final isProcessing = task.status == DownloadStatus.processing;
 
@@ -567,46 +578,64 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               )
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                task.selectedFormat,
-                style: const TextStyle(fontSize: 11, color: LiquidGlassTheme.textLight),
-              ),
-              Text(
-                isProcessing ? 'Processing (FFmpeg)...' : '${(task.progress * 100).toStringAsFixed(0)}% (${task.speed})',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: isProcessing ? LiquidGlassTheme.primaryBlue : LiquidGlassTheme.primaryGreen,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      task.selectedFormat,
+                      style: const TextStyle(fontSize: 11, color: LiquidGlassTheme.textLight),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      task.speed,
+                      style: const TextStyle(fontSize: 10, color: LiquidGlassTheme.textLight),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    isProcessing ? 'Processing...' : _getProgressPercent(task.progress),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: isProcessing ? LiquidGlassTheme.primaryBlue : LiquidGlassTheme.primaryGreen,
+                    ),
+                  ),
+                  if (!isProcessing) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'ETA: ${task.eta}',
+                      style: const TextStyle(fontSize: 10, color: LiquidGlassTheme.textLight),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           
           // Progress bar
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: LinearProgressIndicator(
-              value: isProcessing ? null : task.progress,
+              value: isProcessing ? null : _getSafeProgress(task.progress),
               color: LiquidGlassTheme.primaryGreen,
               backgroundColor: Colors.black.withOpacity(0.04),
               minHeight: 6,
             ),
           ),
-          if (!isProcessing) ...[
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: Text(
-                'ETA: ${task.eta}',
-                style: const TextStyle(fontSize: 10, color: LiquidGlassTheme.textLight),
-              ),
-            ),
-          ]
         ],
       ),
     );

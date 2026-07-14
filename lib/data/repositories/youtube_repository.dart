@@ -7,6 +7,44 @@ class YoutubeRepository {
 
   Future<MediaMetadata?> getMetadata(String url) async {
     try {
+      if (url.contains('list=')) {
+        try {
+          final playlistId = PlaylistId.parsePlaylistId(url);
+          if (playlistId != null) {
+            final playlist = await _yt.playlists.get(playlistId);
+            final List<Video> videos = await _yt.playlists.getVideos(playlistId).toList();
+
+            final List<FormatOption> formats = [];
+            for (var video in videos) {
+              final durationStr = video.duration != null
+                  ? '${video.duration!.inMinutes}:${(video.duration!.inSeconds % 60).toString().padLeft(2, "0")}'
+                  : 'Unknown';
+              formats.add(FormatOption(
+                id: 'playlist_item_${video.id}',
+                label: video.title,
+                ext: 'mp4',
+                sizeLabel: durationStr,
+                qualityValue: 720,
+                isAudioOnly: false,
+                originalStreamInfo: video.url,
+              ));
+            }
+
+            return MediaMetadata(
+              url: url,
+              title: playlist.title,
+              author: playlist.author ?? 'YouTube Playlist',
+              duration: Duration.zero,
+              thumbnailUrl: playlist.thumbnails.highResUrl,
+              sourceType: 'youtube',
+              formats: formats,
+            );
+          }
+        } catch (e) {
+          print('YouTube playlist parse error: $e');
+        }
+      }
+
       final videoId = VideoId.parseVideoId(url);
       if (videoId == null) return null;
 

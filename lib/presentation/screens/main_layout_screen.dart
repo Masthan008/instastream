@@ -1,5 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import '../../core/constants/theme.dart';
+import '../providers/download_provider.dart';
 import '../widgets/liquid_background.dart';
 import 'browser_screen.dart';
 import 'dashboard_screen.dart';
@@ -16,6 +20,7 @@ class MainLayoutScreen extends StatefulWidget {
 
 class _MainLayoutScreenState extends State<MainLayoutScreen> {
   int _currentIndex = 0;
+  late StreamSubscription _intentDataStreamSubscription;
 
   final List<Widget> _screens = const [
     DashboardScreen(),
@@ -26,6 +31,50 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    
+    // Listen for text/links shared while app is in memory
+    _intentDataStreamSubscription = ReceiveSharingIntent.getMediaStream().listen((List<SharedMediaFile> media) {
+      if (media.isNotEmpty) {
+        final text = media.first.path;
+        _handleSharedText(text);
+      }
+    }, onError: (err) {
+      print("Shared text stream error: $err");
+    });
+
+    // Listen for text/links shared while app was closed
+    ReceiveSharingIntent.getInitialMedia().then((List<SharedMediaFile> media) {
+      if (media.isNotEmpty) {
+        final text = media.first.path;
+        _handleSharedText(text);
+      }
+    });
+  }
+
+  void _handleSharedText(String text) {
+    final cleanText = text.trim();
+    if (cleanText.isEmpty) return;
+
+    if (cleanText.contains('youtube.com') ||
+        cleanText.contains('youtu.be') ||
+        cleanText.contains('instagram.com')) {
+      final provider = Provider.of<DownloadProvider>(context, listen: false);
+      provider.analyzeLink(cleanText);
+
+      // Navigate to Dashboard tab to view extraction bottom sheet
+      setState(() {
+        _currentIndex = 0;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _intentDataStreamSubscription.cancel();
+    super.dispose();
+  }
   Widget build(BuildContext context) {
     return Scaffold(
       // Allow WebView to draw full height, or let gradient display behind Scaffold

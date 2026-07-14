@@ -526,12 +526,20 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         ),
         onTap: () {
           Navigator.pop(bottomSheetContext);
-          provider.triggerDownload(format);
-          _urlController.clear();
-          setState(() {});
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Download started in background...')),
-          );
+          if (format.id.startsWith('playlist_item_')) {
+            final videoUrl = format.originalStreamInfo as String;
+            provider.analyzeLink(videoUrl);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Extracting playlist video formats...')),
+            );
+          } else {
+            provider.triggerDownload(format);
+            _urlController.clear();
+            setState(() {});
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Download started in background...')),
+            );
+          }
         },
       ),
     );

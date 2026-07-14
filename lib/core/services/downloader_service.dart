@@ -60,9 +60,28 @@ class DownloaderService {
       final cleanTitle = metadata.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
 
       if (metadata.sourceType == 'youtube') {
-        final ytStream = format.originalStreamInfo;
-        
-        if (format.id.startsWith('muxed_')) {
+        dynamic ytStream = format.originalStreamInfo;
+
+        if (format.id.startsWith('playlist_')) {
+          task.status = DownloadStatus.downloading;
+          task.speed = 'Fetching stream...';
+          await _storage.saveTask(task);
+          onProgressUpdate(task);
+
+          final yt = yt_exp.YoutubeExplode();
+          final videoUrl = format.originalStreamInfo as String;
+          final videoId = yt_exp.VideoId.parseVideoId(videoUrl)!;
+          final manifest = await yt.videos.streamsClient.getManifest(videoId);
+
+          if (format.id.startsWith('playlist_audio_')) {
+            ytStream = manifest.audioOnly.withHighestBitrate();
+          } else {
+            ytStream = manifest.muxed.withHighestVideoQuality() ?? manifest.muxed.first;
+          }
+          yt.close();
+        }
+
+        if (format.id.startsWith('muxed_') || format.id.startsWith('playlist_video_')) {
           // Progressive stream - direct download
           final outputPath = '${downloadsDir.path}/$cleanTitle.${format.ext}';
           final streamUrl = (ytStream as yt_exp.MuxedStreamInfo).url.toString();
@@ -189,7 +208,7 @@ class DownloaderService {
           await _storage.saveTask(task);
           onProgressUpdate(task);
 
-        } else if (format.id.startsWith('audio_mp3_')) {
+        } else if (format.id.startsWith('audio_mp3_') || format.id.startsWith('playlist_audio_')) {
           // Audio download + MP3 conversion
           final tempAudioPath = '${downloadsDir.path}/${taskId}_temp_audio.m4a';
           final finalOutputPath = '${downloadsDir.path}/$cleanTitle.mp3';

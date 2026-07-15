@@ -15,33 +15,45 @@ InstaStream is built with a premium **Liquid Glass** aesthetic featuring:
 
 ## 🚀 Core Features
 
-### 1. System Share Sheet Integration
+### 1. Real-Time Download Picker UI & Flow
+Tapping any format in the Bottom Sheet format picker launches a **Real-Time Download Progress System** directly inside that format tile.
+- **No Background Obscurity**: Eliminates the "starting in background" message with direct feedback.
+- **Live Progress Updates**: Displays percentage (%), download speed (MB/s), and Estimated Time of Arrival (ETA) with a clean progress bar.
+- **Completion States**: Changes to a **"Downloaded • Saved to Gallery"** badge and checkmark when complete.
+
+### 2. Android System Gallery Media Sync (Media Scanner)
+Uses a custom native Kotlin **Android Platform Channel** that interfaces with `MediaScannerConnection`.
+- Whenever a download completes (or a WhatsApp status is saved), the app notifies the Android MediaStore scanner.
+- Files are immediately scanned and indexed, ensuring they show up in Google Photos, Samsung Gallery, and local file explorers.
+
+### 3. Instagram CDN 403 Bypasser
+Instagram CDN links throw a `HTTP 403 Forbidden` response when requested with standard HTTP clients.
+- Direct downloads utilize browser-mimicking headers including a custom `Referer: https://www.instagram.com/` and mobile `User-Agent`.
+- Ensures Instagram videos and reels download successfully on all devices.
+
+### 4. Interactive Permissions Handler
+- Runs active permissions checks prior to starting downloads.
+- Prompts the user to grant storage permissions (or Manage All Files on Android 11+) on-the-fly, gracefully handling fallback sandbox options to prevent crashes.
+
+### 5. System Share Sheet Integration
 Integrates system-level share sheet listeners. Sharing any media URL directly from the official **YouTube** or **Instagram** app automatically opens InstaStream and launches the link analysis picker instantly.
 
-### 2. YouTube Playlist Batch Downloader
+### 6. YouTube Playlist Batch Downloader
 Pasting a playlist URL analyzes and loads the entire video index.
 - Includes **Select All / Deselect All** checkboxes.
 - Provides a **Preferred Quality Dropdown** ("Best Video (HD)", "Fast Video (360p)", or "Audio Only (MP3)").
 - Sequences all chosen items automatically into background download threads.
 
-### 3. Dynamic Ad-Blocker (Domain Blocker)
+### 7. Dynamic Ad-Blocker (Domain Blocker)
 The in-app WebView Browser includes a fully dynamic ad blocker.
 - Intercepts and drops popups and redirect ads.
 - Saves blocking rules inside a persistent Hive database box.
 - Features a management dashboard in settings enabling users to dynamically add, delete, or reset blocked domains.
 
-### 4. Watermark-Free Extraction & Play Preview
-- All Instagram Reels, Posts, and Carousel media are parsed directly from Instagram CDNs, downloading clean, high-definition videos **without any watermarks**.
-- Tap **"Play Preview"** to stream and watch the video directly inside the app before downloading.
-
-### 5. Local FFmpeg Muxing & Transcoding
+### 8. Local FFmpeg Muxing & Transcoding
 Bundles native `ffmpeg_kit_flutter_new` binaries to perform complex processing locally on-device:
 - **HD Muxing**: Downloads separate video-only tracks (e.g. 1080p, 1440p) and audio tracks, merging them into a single high-definition `.mp4` file.
 - **MP3 Encoding**: Converts high-bitrate audio streams directly into standard `.mp3` format.
-
-### 6. Storage Permissions & Sandboxed Fallbacks
-- **Public Directory Access**: Saves downloads directly to public shared folders (`/storage/emulated/0/Download/InstaStream`), making them instantly indexable by standard system galleries on Android 11-16.
-- **Sandbox Fallback**: Performs real-time test-writes on startup. If public directory access is denied, it automatically fallbacks to sandboxed app-specific storage directories, preventing app crashes.
 
 ---
 

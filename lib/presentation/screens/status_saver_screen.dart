@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -222,6 +223,16 @@ class _StatusSaverScreenState extends State<StatusSaverScreen> with SingleTicker
 
       // Copy status file
       await file.copy(newPath);
+
+      // Notify Android Media Store Scanner
+      try {
+        if (Platform.isAndroid) {
+          await const MethodChannel('com.instastream.app/media_scanner')
+              .invokeMethod('scanFile', {'path': newPath});
+        }
+      } catch (e) {
+        print('WhatsApp Status Scanner failed: $e');
+      }
 
       final isVideo = file.path.toLowerCase().endsWith('.mp4');
 

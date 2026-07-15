@@ -197,7 +197,20 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   Widget _buildGalleryItem(DownloadTask task, DownloadProvider provider) {
     final fileExists = File(task.filePath!).existsSync();
-    final isYouTube = task.url.contains('youtube') || task.url.contains('youtu.be');
+    final bool isYouTube = task.url.contains('youtube') || task.url.contains('youtu.be');
+    final bool isWhatsApp = task.url.contains('whatsapp') || task.url == 'WhatsApp Status';
+    
+    final String platformLabel = isYouTube 
+        ? 'YouTube' 
+        : isWhatsApp 
+            ? 'WhatsApp' 
+            : 'Instagram';
+            
+    final Color platformColor = isYouTube 
+        ? Colors.red 
+        : isWhatsApp 
+            ? Colors.green 
+            : Colors.purple;
 
     return GlassmorphicCard(
       margin: const EdgeInsets.only(bottom: 14),
@@ -212,14 +225,23 @@ class _GalleryScreenState extends State<GalleryScreen> {
               height: 80,
               color: Colors.black.withOpacity(0.04),
               child: task.thumbnail.isNotEmpty
-                  ? Image.network(
-                      task.thumbnail,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Icon(
-                        task.type == DownloadType.video ? Icons.movie_creation : Icons.music_note,
-                        color: LiquidGlassTheme.primaryBlue,
-                      ),
-                    )
+                  ? (task.thumbnail.startsWith('/') || task.thumbnail.startsWith('file://'))
+                      ? Image.file(
+                          File(task.thumbnail.replaceAll('file://', '')),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Icon(
+                            task.type == DownloadType.video ? Icons.movie_creation : Icons.music_note,
+                            color: LiquidGlassTheme.primaryBlue,
+                          ),
+                        )
+                      : Image.network(
+                          task.thumbnail,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Icon(
+                            task.type == DownloadType.video ? Icons.movie_creation : Icons.music_note,
+                            color: LiquidGlassTheme.primaryBlue,
+                          ),
+                        )
                   : Icon(
                       task.type == DownloadType.video ? Icons.movie_creation : Icons.music_note,
                       color: LiquidGlassTheme.primaryBlue,
@@ -236,15 +258,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: isYouTube ? Colors.red.withOpacity(0.1) : Colors.purple.withOpacity(0.1),
+                        color: platformColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        isYouTube ? 'YouTube' : 'Instagram',
+                        platformLabel,
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: isYouTube ? Colors.red : Colors.purple,
+                          color: platformColor,
                         ),
                       ),
                     ),

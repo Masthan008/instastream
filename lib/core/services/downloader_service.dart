@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 import '../../data/models/download_task.dart';
@@ -26,6 +27,32 @@ class DownloaderService {
   // Queue for managing concurrent downloads
   final List<QueuedDownload> _queue = [];
   final Set<String> _activeTaskIds = {};
+
+  static const _scannerChannel = MethodChannel('com.instastream.app/media_scanner');
+
+  Future<void> _scanFile(String path) async {
+    try {
+      if (Platform.isAndroid) {
+        await _scannerChannel.invokeMethod('scanFile', {'path': path});
+      }
+    } catch (e) {
+      print('Media scanner failed to scan $path: $e');
+    }
+  }
+
+  Future<void> _markTaskCompleted({
+    required DownloadTask task,
+    required String path,
+    required Function(DownloadTask) onProgressUpdate,
+  }) async {
+    task.status = DownloadStatus.completed;
+    task.filePath = path;
+    task.progress = 1.0;
+    task.speed = 'Done';
+    await _storage.saveTask(task);
+    onProgressUpdate(task);
+    await _scanFile(path);
+  }
 
   DownloaderService(this._storage);
 
@@ -173,12 +200,11 @@ class DownloaderService {
             },
           );
 
-          task.status = DownloadStatus.completed;
-          task.filePath = outputPath;
-          task.progress = 1.0;
-          task.speed = 'Done';
-          await _storage.saveTask(task);
-          onProgressUpdate(task);
+          await _markTaskCompleted(
+            task: task,
+            path: outputPath,
+            onProgressUpdate: onProgressUpdate,
+          );
 
         } else if (format.id.startsWith('video_only_')) {
           // HD stream - requires video-only + audio-only + ffmpeg merging
@@ -244,16 +270,17 @@ class DownloaderService {
           } catch (_) {}
 
           if (success) {
-            task.status = DownloadStatus.completed;
-            task.filePath = finalOutputPath;
-            task.progress = 1.0;
-            task.speed = 'Done';
+            await _markTaskCompleted(
+              task: task,
+              path: finalOutputPath,
+              onProgressUpdate: onProgressUpdate,
+            );
           } else {
             task.status = DownloadStatus.failed;
             task.error = 'FFmpeg merging failed';
+            await _storage.saveTask(task);
+            onProgressUpdate(task);
           }
-          await _storage.saveTask(task);
-          onProgressUpdate(task);
 
         } else if (format.id.startsWith('audio_raw_')) {
           // Direct raw audio download
@@ -271,12 +298,11 @@ class DownloaderService {
             },
           );
 
-          task.status = DownloadStatus.completed;
-          task.filePath = outputPath;
-          task.progress = 1.0;
-          task.speed = 'Done';
-          await _storage.saveTask(task);
-          onProgressUpdate(task);
+          await _markTaskCompleted(
+            task: task,
+            path: outputPath,
+            onProgressUpdate: onProgressUpdate,
+          );
 
         } else if (format.id.startsWith('audio_mp3_') || format.id.startsWith('playlist_audio_')) {
           // Audio download + MP3 conversion
@@ -313,16 +339,17 @@ class DownloaderService {
           } catch (_) {}
 
           if (success) {
-            task.status = DownloadStatus.completed;
-            task.filePath = finalOutputPath;
-            task.progress = 1.0;
-            task.speed = 'Done';
+            await _markTaskCompleted(
+              task: task,
+              path: finalOutputPath,
+              onProgressUpdate: onProgressUpdate,
+            );
           } else {
             task.status = DownloadStatus.failed;
             task.error = 'MP3 transcoding failed';
+            await _storage.saveTask(task);
+            onProgressUpdate(task);
           }
-          await _storage.saveTask(task);
-          onProgressUpdate(task);
         } else if (format.id.startsWith('subtitles_')) {
           // Download and parse YouTube Subtitles
           task.status = DownloadStatus.downloading;
@@ -342,16 +369,24 @@ class DownloaderService {
           final srtFile = File(finalOutputPath);
           await srtFile.writeAsString(srtContent);
 
-          task.status = DownloadStatus.completed;
-          task.filePath = finalOutputPath;
-          task.progress = 1.0;
-          task.speed = 'Done';
-          await _storage.saveTask(task);
-          onProgressUpdate(task);
+          await _markTaskCompleted(
+            task: task,
+            path: finalOutputPath,
+            onProgressUpdate: onProgressUpdate,
+          );
         }
 
       } else if (metadata.sourceType == 'instagram') {
         final directLink = format.originalStreamInfo as String;
+        final Map<String, dynamic> igHeaders = {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+          'Accept': '*/*',
+          'Accept-Encoding': 'identity',
+          'Referer': 'https://www.instagram.com/',
+          'Sec-Fetch-Dest': 'video',
+          'Sec-Fetch-Mode': 'no-cors',
+          'Sec-Fetch-Site': 'cross-site',
+        };
 
         if (format.id.contains('mp3')) {
           // Download video + convert to audio (MP3)
@@ -362,6 +397,7 @@ class DownloaderService {
             url: directLink,
             savePath: tempVideoPath,
             cancelToken: cancelToken,
+            headers: igHeaders,
             onProgress: (prog, speed, eta) async {
               task.progress = prog * 0.8;
               task.speed = 'Downloading video: $speed';
@@ -388,16 +424,17 @@ class DownloaderService {
           } catch (_) {}
 
           if (success) {
-            task.status = DownloadStatus.completed;
-            task.filePath = finalOutputPath;
-            task.progress = 1.0;
-            task.speed = 'Done';
+            await _markTaskCompleted(
+              task: task,
+              path: finalOutputPath,
+              onProgressUpdate: onProgressUpdate,
+            );
           } else {
             task.status = DownloadStatus.failed;
             task.error = 'Audio extraction failed';
+            await _storage.saveTask(task);
+            onProgressUpdate(task);
           }
-          await _storage.saveTask(task);
-          onProgressUpdate(task);
 
         } else {
           // Direct download (video MP4 or image JPG)
@@ -407,6 +444,7 @@ class DownloaderService {
             url: directLink,
             savePath: outputPath,
             cancelToken: cancelToken,
+            headers: igHeaders,
             onProgress: (prog, speed, eta) async {
               task.progress = prog;
               task.speed = speed;
@@ -416,12 +454,11 @@ class DownloaderService {
             },
           );
 
-          task.status = DownloadStatus.completed;
-          task.filePath = outputPath;
-          task.progress = 1.0;
-          task.speed = 'Done';
-          await _storage.saveTask(task);
-          onProgressUpdate(task);
+          await _markTaskCompleted(
+            task: task,
+            path: outputPath,
+            onProgressUpdate: onProgressUpdate,
+          );
         }
       }
     } catch (e) {
@@ -442,6 +479,7 @@ class DownloaderService {
     required String savePath,
     required CancelToken cancelToken,
     required Function(double progress, String speed, String eta) onProgress,
+    Map<String, dynamic>? headers,
   }) async {
     final startTime = DateTime.now();
     
@@ -449,6 +487,9 @@ class DownloaderService {
       url,
       savePath,
       cancelToken: cancelToken,
+      options: Options(
+        headers: headers,
+      ),
       onReceiveProgress: (received, total) {
         if (total != -1) {
           final elapsed = DateTime.now().difference(startTime).inMilliseconds;

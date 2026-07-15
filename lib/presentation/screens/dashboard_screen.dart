@@ -367,10 +367,12 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setModalState) {
-            return FractionallySizedBox(
-              heightFactor: 0.75,
+        return Consumer<DownloadProvider>(
+          builder: (context, provider, child) {
+            return StatefulBuilder(
+              builder: (BuildContext context, StateSetter setModalState) {
+                return FractionallySizedBox(
+                  heightFactor: 0.75,
               child: Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
@@ -579,6 +581,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                   ],
                 ),
               ),
+                );
+              }
             );
           }
         );
@@ -626,6 +630,26 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   }
 
   Widget _buildFormatListTile(FormatOption format, DownloadProvider provider, BuildContext bottomSheetContext) {
+    final meta = provider.analyzedMetadata;
+    final task = provider.tasks.firstWhere(
+      (t) => t.url == meta?.url && t.selectedFormat == format.label,
+      orElse: () => DownloadTask(
+        id: '',
+        url: '',
+        title: '',
+        thumbnail: '',
+        type: DownloadType.video,
+        selectedFormat: '',
+      ),
+    );
+
+    final isDownloading = task.id.isNotEmpty && 
+        (task.status == DownloadStatus.pending || 
+         task.status == DownloadStatus.downloading || 
+         task.status == DownloadStatus.processing);
+    final isCompleted = task.id.isNotEmpty && task.status == DownloadStatus.completed;
+    final isFailed = task.id.isNotEmpty && task.status == DownloadStatus.failed;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -668,35 +692,105 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               ),
           ],
         ),
-        subtitle: Text(
-          'Size: ${format.sizeLabel} • format: ${format.ext.toUpperCase()}',
-          style: const TextStyle(fontSize: 11, color: LiquidGlassTheme.textLight),
-        ),
-        trailing: Container(
-          padding: const EdgeInsets.all(6),
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white,
-          ),
-          child: const Icon(Icons.download_rounded, color: LiquidGlassTheme.primaryGreen, size: 18),
-        ),
-        onTap: () {
-          Navigator.pop(bottomSheetContext);
-          if (format.id.startsWith('playlist_item_')) {
-            final videoUrl = format.originalStreamInfo as String;
-            provider.analyzeLink(videoUrl);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Extracting playlist video formats...')),
-            );
-          } else {
-            provider.triggerDownload(format);
-            _urlController.clear();
-            setState(() {});
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Download started in background...')),
-            );
-          }
-        },
+        subtitle: isCompleted
+            ? Text(
+                'Downloaded • Saved to Gallery',
+                style: TextStyle(fontSize: 11, color: Colors.green.shade600, fontWeight: FontWeight.bold),
+              )
+            : isFailed
+                ? Text(
+                    'Failed: ${task.error ?? "Unknown error"}',
+                    style: const TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.bold),
+                  )
+                : isDownloading
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                task.status == DownloadStatus.pending ? 'Queued...' : '${task.speed} • ${task.eta}',
+                                style: const TextStyle(fontSize: 10, color: LiquidGlassTheme.primaryBlue, fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                '${(task.progress * 100).toStringAsFixed(0)}%',
+                                style: const TextStyle(fontSize: 10, color: LiquidGlassTheme.textDark, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: task.progress,
+                              color: LiquidGlassTheme.primaryGreen,
+                              backgroundColor: Colors.black.withOpacity(0.04),
+                              minHeight: 4,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        'Size: ${format.sizeLabel} • format: ${format.ext.toUpperCase()}',
+                        style: const TextStyle(fontSize: 11, color: LiquidGlassTheme.textLight),
+                      ),
+        trailing: isCompleted
+            ? Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.green,
+                ),
+                child: const Icon(Icons.check, color: Colors.white, size: 14),
+              )
+            : isFailed
+                ? const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20)
+                : isDownloading
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          value: task.status == DownloadStatus.processing ? null : task.progress,
+                          color: LiquidGlassTheme.primaryGreen,
+                        ),
+                      )
+                    : Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                        ),
+                        child: const Icon(Icons.download_rounded, color: LiquidGlassTheme.primaryGreen, size: 18),
+                      ),
+        onTap: isDownloading || isCompleted
+            ? null
+            : () async {
+                final hasPermission = await provider.checkAndRequestStoragePermission();
+                if (!hasPermission) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Storage permissions are required to download files to public storage.')),
+                  );
+                  return;
+                }
+
+                if (format.id.startsWith('playlist_item_')) {
+                  Navigator.pop(bottomSheetContext);
+                  final videoUrl = format.originalStreamInfo as String;
+                  provider.analyzeLink(videoUrl);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Extracting playlist video formats...')),
+                  );
+                } else {
+                  provider.triggerDownload(format);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Download started...')),
+                  );
+                }
+              },
       ),
     );
   }

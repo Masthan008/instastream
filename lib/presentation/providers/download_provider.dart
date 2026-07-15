@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../core/services/downloader_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../data/models/download_task.dart';
@@ -236,6 +238,31 @@ class DownloadProvider extends ChangeNotifier {
     _maxConcurrentDownloads = count;
     await _storage.saveMaxConcurrentDownloads(count);
     notifyListeners();
+  }
+
+  Future<bool> checkAndRequestStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+    
+    if (await Permission.manageExternalStorage.isGranted) return true;
+    if (await Permission.storage.isGranted) return true;
+    if (await Permission.videos.isGranted && await Permission.audio.isGranted) return true;
+
+    try {
+      if (await Permission.manageExternalStorage.request().isGranted) {
+        return true;
+      }
+      
+      final storageStatus = await Permission.storage.request();
+      if (storageStatus.isGranted) return true;
+
+      final videosStatus = await Permission.videos.request();
+      final audioStatus = await Permission.audio.request();
+      if (videosStatus.isGranted && audioStatus.isGranted) return true;
+    } catch (e) {
+      print('Permission request failed: $e');
+    }
+    
+    return false;
   }
 
   @override

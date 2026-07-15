@@ -46,7 +46,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final bool hasMedia = url.contains('youtube.com/watch') ||
         url.contains('youtu.be/') ||
         url.contains('instagram.com/reel/') ||
-        url.contains('instagram.com/p/');
+        url.contains('instagram.com/p/') ||
+        url.contains('instagram.com/stories/') ||
+        url.contains('instagram.com/highlights/') ||
+        url.contains('instagram.com/s/');
     setState(() {
       _showDownloadBtn = hasMedia;
     });
@@ -83,11 +86,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
         // Run Javascript to scrape DOM video or image elements
         final result = await _webViewController!.evaluateJavascript(source: """
           (function() {
-            // Find all videos and images within the post container
+            // 1. Try to find active video (stories, reels, posts)
+            var video = document.querySelector('video');
+            if (video && video.src && !video.src.startsWith('blob:')) {
+              return { 'url': video.src, 'type': 'video', 'title': document.title || 'Instagram Video' };
+            }
+            
+            // 2. Try to find carousel/slides
             var post = document.querySelector('article') || document;
             var slides = [];
             
-            // Get all videos
             var videos = post.querySelectorAll('video');
             videos.forEach(function(v) {
               if (v.src && !v.src.startsWith('blob:') && slides.indexOf(v.src) === -1) {
@@ -95,7 +103,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
               }
             });
             
-            // Get all slide images
             var images = post.querySelectorAll('ul li img');
             if (images.length === 0) {
               images = post.querySelectorAll('img[style*="object-fit: cover"]');
@@ -107,17 +114,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
             });
             
             if (slides.length > 0) {
-              return { 'slides': slides, 'title': document.title };
+              return { 'slides': slides, 'title': document.title || 'Instagram Slideshow' };
             }
             
-            // Fallback for single item
-            var video = document.querySelector('video');
-            if (video && video.src) {
-              return { 'url': video.src, 'type': 'video', 'title': document.title };
-            }
-            var img = document.querySelector('article img');
-            if (img && img.src) {
-              return { 'url': img.src, 'type': 'image', 'title': document.title };
+            // 3. Fallback for single image (posts or stories/highlights)
+            var storyImg = document.querySelector('img[decoding="sync"]') || 
+                           document.querySelector('section img') || 
+                           document.querySelector('article img') || 
+                           document.querySelector('img[srcset]');
+            if (storyImg && storyImg.src) {
+              return { 'url': storyImg.src, 'type': 'image', 'title': document.title || 'Instagram Image' };
             }
             return null;
           })()

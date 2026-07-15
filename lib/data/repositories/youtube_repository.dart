@@ -38,6 +38,8 @@ class YoutubeRepository {
               thumbnailUrl: playlist.thumbnails.highResUrl,
               sourceType: 'youtube',
               formats: formats,
+              id: playlistId,
+              description: playlist.description,
             );
           }
         } catch (e) {
@@ -140,6 +142,10 @@ class YoutubeRepository {
         return b.qualityValue.compareTo(a.qualityValue);
       });
 
+      final dateStr = video.uploadDate != null 
+          ? '${video.uploadDate!.day}/${video.uploadDate!.month}/${video.uploadDate!.year}' 
+          : null;
+
       return MediaMetadata(
         url: url,
         title: video.title,
@@ -148,6 +154,11 @@ class YoutubeRepository {
         thumbnailUrl: video.thumbnails.highResUrl,
         sourceType: 'youtube',
         formats: formats,
+        id: videoId,
+        views: video.engagement.viewCount,
+        likes: video.engagement.likeCount,
+        uploadDate: dateStr,
+        description: video.description,
       );
     } catch (e) {
       print('YouTube getMetadata error: $e');

@@ -32,6 +32,7 @@ class InstagramRepository {
             duration: Duration.zero,
             thumbnailUrl: ogImage ?? '',
             sourceType: 'instagram',
+            id: _extractShortcode(url),
             formats: [
               FormatOption(
                 id: 'ig_video_high',
@@ -61,6 +62,7 @@ class InstagramRepository {
             duration: Duration.zero,
             thumbnailUrl: ogImage,
             sourceType: 'instagram',
+            id: _extractShortcode(url),
             formats: [
               FormatOption(
                 id: 'ig_image_high',
@@ -129,6 +131,7 @@ class InstagramRepository {
       duration: Duration.zero,
       thumbnailUrl: thumbnailUrl ?? (isVideo ? '' : directLink),
       sourceType: 'instagram',
+      id: _extractShortcode(originalUrl),
       formats: formats,
     );
   }
@@ -189,6 +192,7 @@ class InstagramRepository {
       duration: Duration.zero,
       thumbnailUrl: formats.isNotEmpty ? (formats.first.originalStreamInfo as String) : '',
       sourceType: 'instagram',
+      id: _extractShortcode(originalUrl),
       formats: formats,
     );
   }
@@ -216,5 +220,15 @@ class InstagramRepository {
       return match.group(0) ?? 'instagram_user';
     }
     return 'instagram_user';
+  }
+
+  String _extractShortcode(String url) {
+    try {
+      final reg = RegExp(r'/(p|reel|tv|stories|highlights|s)/([a-zA-Z0-9_\-]+)');
+      final match = reg.firstMatch(url);
+      return match?.group(2) ?? '';
+    } catch (_) {
+      return '';
+    }
   }
 }

@@ -350,8 +350,26 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     }
 
     final bool isPlaylist = meta.url.contains('list=');
+    final bool hasSlides = meta.formats.any((f) => f.id.startsWith('ig_slide_'));
+    
+    // Slide index list calculation
+    final int slideCount = hasSlides
+        ? meta.formats
+            .where((f) => f.id.startsWith('ig_slide_'))
+            .map((f) {
+              final parts = f.id.split('_'); // 'ig_slide_0_video'
+              return int.tryParse(parts[2]) ?? 0;
+            })
+            .fold(0, (maxVal, val) => val > maxVal ? val : maxVal) + 1
+        : 0;
+
+    String selectedTab = hasSlides ? 'slides' : 'video';
     String preferredQuality = 'best_video';
     List<String> selectedVideoUrls = [];
+    List<int> selectedSlideIndices = hasSlides 
+        ? List.generate(slideCount, (index) => index)
+        : [];
+
     if (isPlaylist) {
       selectedVideoUrls = meta.formats
           .where((f) => f.id.startsWith('playlist_item_'))
@@ -372,11 +390,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
             return StatefulBuilder(
               builder: (BuildContext context, StateSetter setModalState) {
                 return FractionallySizedBox(
-                  heightFactor: 0.75,
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  heightFactor: 0.85, // Increase height slightly to fit thumbnails and tabs nicely!
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Center(
                       child: Container(
@@ -388,22 +406,179 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     
-                    // Content Title
-                    Text(
-                      meta.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: LiquidGlassTheme.textDark),
+                    // Rich Thumbnail Card
+                    if (meta.thumbnailUrl.isNotEmpty)
+                      Container(
+                        height: 120,
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.network(
+                                meta.thumbnailUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: Colors.black.withOpacity(0.04),
+                                  child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
+                                ),
+                              ),
+                              Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.transparent,
+                                      Colors.black.withOpacity(0.6),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                bottom: 8,
+                                left: 12,
+                                right: 12,
+                                child: Text(
+                                  meta.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      
+                    if (meta.thumbnailUrl.isEmpty) ...[
+                      Text(
+                        meta.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: LiquidGlassTheme.textDark),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isPlaylist 
+                                ? 'YouTube Playlist • ${meta.formats.length} Videos' 
+                                : 'By ${meta.author} • ${meta.durationString}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: LiquidGlassTheme.textLight, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        if (meta.sourceType == 'instagram' && !hasSlides && previewUrl != null)
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              backgroundColor: LiquidGlassTheme.primaryBlue.withOpacity(0.1),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            icon: const Icon(Icons.play_arrow_rounded, color: LiquidGlassTheme.primaryBlue, size: 14),
+                            label: const Text('Preview', style: TextStyle(color: LiquidGlassTheme.primaryBlue, fontSize: 11, fontWeight: FontWeight.bold)),
+                            onPressed: () {
+                              _playPreview(context, previewUrl!);
+                            },
+                          ),
+                      ],
                     ),
-                    Text(
-                      isPlaylist 
-                          ? 'YouTube Playlist • ${meta.formats.length} Videos' 
-                          : 'By ${meta.author} • ${meta.durationString}',
-                      style: const TextStyle(color: LiquidGlassTheme.textLight, fontSize: 12),
+                    const SizedBox(height: 8),
+
+                    // Stats & IDs Card Row
+                    Row(
+                      children: [
+                        if (meta.views != null)
+                          Expanded(
+                            child: _buildMetricCard(
+                              icon: Icons.play_arrow_rounded,
+                              label: 'Views',
+                              value: _formatMetric(meta.views!),
+                              color: Colors.blue,
+                            ),
+                          ),
+                        if (meta.likes != null) ...[
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _buildMetricCard(
+                              icon: Icons.favorite_rounded,
+                              label: 'Likes',
+                              value: _formatMetric(meta.likes!),
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ],
+                        if (meta.uploadDate != null) ...[
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _buildMetricCard(
+                              icon: Icons.calendar_today_rounded,
+                              label: 'Date',
+                              value: meta.uploadDate!,
+                              color: Colors.orange,
+                            ),
+                          ),
+                        ],
+                        if (meta.id.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _buildIDCard(
+                              context: context,
+                              id: meta.id,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+
+                    // Tabs group toggle bar (Slides, Video, Audio)
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.04),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          if (hasSlides)
+                            _buildTabButton('Slides', selectedTab == 'slides', () {
+                              setModalState(() => selectedTab = 'slides');
+                            }),
+                          _buildTabButton('Video', selectedTab == 'video', () {
+                            setModalState(() => selectedTab = 'video');
+                          }),
+                          _buildTabButton('Audio', selectedTab == 'audio', () {
+                            setModalState(() => selectedTab = 'audio');
+                          }),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
 
                     if (isPlaylist) ...[
                       // Playlist batch controls
@@ -519,10 +694,10 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
-                            'Choose Download Format',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: LiquidGlassTheme.textDark),
+                            'Available Formats',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: LiquidGlassTheme.textDark),
                           ),
-                          if (previewUrl != null)
+                          if (previewUrl != null && !isPlaylist && !(meta.sourceType == 'instagram' && !hasSlides))
                             TextButton.icon(
                               style: TextButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -538,45 +713,58 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                         ],
                       ),
                     ],
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     Expanded(
                       child: meta.formats.isEmpty
                           ? _buildWebViewLoginPrompt(meta.url, provider, ctx)
-                          : ListView.builder(
-                              itemCount: meta.formats.length,
-                              itemBuilder: (c, idx) {
-                                final fmt = meta.formats[idx];
-                                if (isPlaylist) {
-                                  final videoUrl = fmt.originalStreamInfo as String;
-                                  final isSelected = selectedVideoUrls.contains(videoUrl);
-                                  return CheckboxListTile(
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                                    title: Text(
-                                      fmt.label,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          : isPlaylist
+                              ? ListView.builder(
+                                  itemCount: meta.formats.length,
+                                  itemBuilder: (c, idx) {
+                                    final fmt = meta.formats[idx];
+                                    final videoUrl = fmt.originalStreamInfo as String;
+                                    final isSelected = selectedVideoUrls.contains(videoUrl);
+                                    return CheckboxListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                                      title: Text(
+                                        fmt.label,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                      ),
+                                      subtitle: Text(
+                                        'Duration: ${fmt.sizeLabel}',
+                                        style: const TextStyle(fontSize: 11, color: LiquidGlassTheme.textLight),
+                                      ),
+                                      value: isSelected,
+                                      activeColor: LiquidGlassTheme.primaryGreen,
+                                      onChanged: (val) {
+                                        setModalState(() {
+                                          if (val == true) {
+                                            selectedVideoUrls.add(videoUrl);
+                                          } else {
+                                            selectedVideoUrls.remove(videoUrl);
+                                          }
+                                        });
+                                      },
+                                    );
+                                  },
+                                )
+                              : selectedTab == 'slides'
+                                  ? _buildSlidesChecklist(meta, provider, setModalState, selectedSlideIndices, slideCount, ctx)
+                                  : ListView.builder(
+                                      itemCount: meta.formats
+                                          .where((f) => selectedTab == 'video' ? !f.isAudioOnly : f.isAudioOnly)
+                                          .toList()
+                                          .length,
+                                      itemBuilder: (c, idx) {
+                                        final filteredList = meta.formats
+                                            .where((f) => selectedTab == 'video' ? !f.isAudioOnly : f.isAudioOnly)
+                                            .toList();
+                                        final fmt = filteredList[idx];
+                                        return _buildFormatListTile(fmt, provider, ctx);
+                                      },
                                     ),
-                                    subtitle: Text(
-                                      'Duration: ${fmt.sizeLabel}',
-                                      style: const TextStyle(fontSize: 11, color: LiquidGlassTheme.textLight),
-                                    ),
-                                    value: isSelected,
-                                    activeColor: LiquidGlassTheme.primaryGreen,
-                                    onChanged: (val) {
-                                      setModalState(() {
-                                        if (val == true) {
-                                          selectedVideoUrls.add(videoUrl);
-                                        } else {
-                                          selectedVideoUrls.remove(videoUrl);
-                                        }
-                                      });
-                                    },
-                                  );
-                                }
-                                return _buildFormatListTile(fmt, provider, ctx);
-                              },
-                            ),
                     )
                   ],
                 ),
@@ -913,6 +1101,309 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMetricCard({required IconData icon, required String label, required String value, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.black.withOpacity(0.01)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 12, color: color),
+              const SizedBox(width: 4),
+              Text(label, style: const TextStyle(fontSize: 9, color: LiquidGlassTheme.textLight, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: LiquidGlassTheme.textDark),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIDCard({required BuildContext context, required String id}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.black.withOpacity(0.01)),
+      ),
+      child: InkWell(
+        onTap: () {
+          Clipboard.setData(ClipboardData(text: id));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('ID $id copied to clipboard!'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.copy_rounded, size: 12, color: LiquidGlassTheme.primaryBlue),
+                SizedBox(width: 4),
+                Text('Copy ID', style: TextStyle(fontSize: 9, color: LiquidGlassTheme.textLight, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              id,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: LiquidGlassTheme.primaryBlue),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatMetric(int count) {
+    if (count >= 1000000000) {
+      return '${(count / 1000000000).toStringAsFixed(1)}B';
+    } else if (count >= 1000000) {
+      return '${(count / 1000000).toStringAsFixed(1)}M';
+    } else if (count >= 1000) {
+      return '${(count / 1000).toStringAsFixed(1)}K';
+    }
+    return count.toString();
+  }
+
+  Widget _buildTabButton(String label, bool isSelected, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            gradient: isSelected ? LiquidGlassTheme.brandGradient : null,
+            color: isSelected ? null : Colors.black.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? Colors.transparent : Colors.black.withOpacity(0.01),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.white : LiquidGlassTheme.textLight,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlidesChecklist(
+    MediaMetadata meta,
+    DownloadProvider provider,
+    StateSetter setModalState,
+    List<int> selectedSlideIndices,
+    int slideCount,
+    BuildContext bottomSheetContext,
+  ) {
+    return Column(
+      children: [
+        // Batch Actions: Select All / Deselect All and Download Button
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: LiquidGlassTheme.primaryBlue.withOpacity(0.04),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Select Slides to Download',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: LiquidGlassTheme.textDark),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setModalState(() {
+                        if (selectedSlideIndices.length == slideCount) {
+                          selectedSlideIndices.clear();
+                        } else {
+                          selectedSlideIndices = List.generate(slideCount, (i) => i);
+                        }
+                      });
+                    },
+                    child: Text(
+                      selectedSlideIndices.length == slideCount ? 'Deselect All' : 'Select All',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: LiquidGlassTheme.primaryBlue),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: LiquidGlassTheme.primaryGreen,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  icon: const Icon(Icons.download_rounded, size: 18),
+                  label: Text(
+                    'Download Selected Slides (${selectedSlideIndices.length})',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  onPressed: selectedSlideIndices.isEmpty
+                      ? null
+                      : () async {
+                          final hasPermission = await provider.checkAndRequestStoragePermission();
+                          if (!hasPermission) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Storage permissions are required to download slides.')),
+                            );
+                            return;
+                          }
+                          
+                          int queuedCount = 0;
+                          for (int idx in selectedSlideIndices) {
+                            final formatsForSlide = meta.formats.where((f) => f.id.startsWith('ig_slide_${idx}_')).toList();
+                            if (formatsForSlide.isEmpty) continue;
+                            
+                            final bestFormat = formatsForSlide.firstWhere(
+                              (f) => !f.isAudioOnly,
+                              orElse: () => formatsForSlide.first,
+                            );
+                            
+                            provider.triggerDownload(bestFormat);
+                            queuedCount++;
+                          }
+                          
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Queued $queuedCount slides for downloading...')),
+                          );
+                        },
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        
+        // Slides List Grid
+        Expanded(
+          child: GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 0.85,
+            ),
+            itemCount: slideCount,
+            itemBuilder: (context, idx) {
+              final isChecked = selectedSlideIndices.contains(idx);
+              final formatsForSlide = meta.formats.where((f) => f.id.startsWith('ig_slide_${idx}_')).toList();
+              final isVideoSlide = formatsForSlide.any((f) => f.id.contains('_video'));
+              final mediaFormat = formatsForSlide.firstWhere((f) => !f.isAudioOnly, orElse: () => formatsForSlide.first);
+              final streamUrl = mediaFormat.originalStreamInfo as String;
+
+              return GestureDetector(
+                onTap: () {
+                  setModalState(() {
+                    if (isChecked) {
+                      selectedSlideIndices.remove(idx);
+                    } else {
+                      selectedSlideIndices.add(idx);
+                    }
+                  });
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isChecked ? LiquidGlassTheme.primaryGreen : Colors.grey.withOpacity(0.2),
+                      width: isChecked ? 2 : 1,
+                    ),
+                    color: Colors.black.withOpacity(0.01),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (!isVideoSlide)
+                          Image.network(
+                            streamUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.image, size: 24, color: Colors.grey),
+                          )
+                        else
+                          Container(
+                            color: Colors.black87,
+                            child: const Center(
+                              child: Icon(Icons.play_circle_outline, color: Colors.white, size: 28),
+                            ),
+                          ),
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isChecked ? LiquidGlassTheme.primaryGreen : Colors.black.withOpacity(0.4),
+                            ),
+                            child: isChecked
+                                ? const Icon(Icons.check, size: 12, color: Colors.white)
+                                : Container(),
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 4,
+                          left: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Slide ${idx + 1}',
+                              style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

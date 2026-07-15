@@ -189,12 +189,31 @@ class _StatusSaverScreenState extends State<StatusSaverScreen> with SingleTicker
       Directory downloadsDir;
       if (Platform.isAndroid) {
         downloadsDir = Directory('/storage/emulated/0/Download/InstaStream');
+        try {
+          if (!await downloadsDir.exists()) {
+            await downloadsDir.create(recursive: true);
+          }
+          final testFile = File('${downloadsDir.path}/.test_write_${DateTime.now().millisecondsSinceEpoch}');
+          await testFile.writeAsString('test');
+          await testFile.delete();
+        } catch (_) {
+          final baseDir = await getExternalStorageDirectory();
+          if (baseDir != null) {
+            downloadsDir = Directory('${baseDir.path}/InstaStream');
+          } else {
+            final docDir = await getApplicationDocumentsDirectory();
+            downloadsDir = Directory('${docDir.path}/InstaStream');
+          }
+          if (!await downloadsDir.exists()) {
+            await downloadsDir.create(recursive: true);
+          }
+        }
       } else {
         final baseDir = await getApplicationDocumentsDirectory();
         downloadsDir = Directory('${baseDir.path}/InstaStream');
-      }
-      if (!await downloadsDir.exists()) {
-        await downloadsDir.create(recursive: true);
+        if (!await downloadsDir.exists()) {
+          await downloadsDir.create(recursive: true);
+        }
       }
 
       final originalName = file.path.split('/').last;

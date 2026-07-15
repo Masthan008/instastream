@@ -263,60 +263,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     supportMultipleWindows: false,
                     javaScriptCanOpenWindowsAutomatically: false,
                     userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                    contentBlockers: [
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*doubleclick.net.*"),
+                    contentBlockers: downloadProvider.blockedDomains.map((domain) {
+                      return ContentBlocker(
+                        trigger: ContentBlockerTrigger(urlFilter: ".*$domain.*"),
                         action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*googleadservices.com.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*googlesyndication.com.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*adservice.google.com.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*adsystem.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*popads.net.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*popcash.net.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*adsterra.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*exoclick.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*propellerads.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*onclickads.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*adsterramedia.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                      ContentBlocker(
-                        trigger: ContentBlockerTrigger(urlFilter: ".*juicyads.*"),
-                        action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-                      ),
-                    ],
+                      );
+                    }).toList(),
                   ),
                   onCreateWindow: (controller, createWindowAction) async {
                     return false; // Blocks popups dynamically

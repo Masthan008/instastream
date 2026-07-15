@@ -35,7 +35,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
     super.initState();
     
     // Listen for text/links shared while app is in memory
-    _intentDataStreamSubscription = ReceiveSharingIntent.getMediaStream().listen((List<SharedMediaFile> media) {
+    _intentDataStreamSubscription = ReceiveSharingIntent.instance.getMediaStream().listen((List<SharedMediaFile> media) {
       if (media.isNotEmpty) {
         final text = media.first.path;
         _handleSharedText(text);
@@ -45,7 +45,7 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
     });
 
     // Listen for text/links shared while app was closed
-    ReceiveSharingIntent.getInitialMedia().then((List<SharedMediaFile> media) {
+    ReceiveSharingIntent.instance.getInitialMedia().then((List<SharedMediaFile> media) {
       if (media.isNotEmpty) {
         final text = media.first.path;
         _handleSharedText(text);

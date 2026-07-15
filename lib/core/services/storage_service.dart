@@ -48,4 +48,40 @@ class StorageService {
   Future<void> saveThemePreference(bool isDark) async {
     await _box.put('is_dark_mode', isDark);
   }
+
+  static const List<String> defaultBlockedDomains = [
+    'doubleclick.net',
+    'googleadservices.com',
+    'googlesyndication.com',
+    'adservice.google.com',
+    'adsystem',
+    'popads.net',
+    'popcash.net',
+    'adsterra',
+    'exoclick',
+    'propellerads',
+    'onclickads',
+    'adsterramedia',
+    'juicyads',
+  ];
+
+  List<String> getBlockedDomains() {
+    final list = _box.get('blocked_domains');
+    if (list == null) {
+      return List<String>.from(defaultBlockedDomains);
+    }
+    return List<String>.from(list as List);
+  }
+
+  Future<void> saveBlockedDomains(List<String> domains) async {
+    await _box.put('blocked_domains', domains);
+  }
+
+  int getMaxConcurrentDownloads() {
+    return _box.get('max_concurrent_downloads', defaultValue: 2) as int;
+  }
+
+  Future<void> saveMaxConcurrentDownloads(int count) async {
+    await _box.put('max_concurrent_downloads', count);
+  }
 }

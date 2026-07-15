@@ -5,6 +5,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_exp;
 import '../../core/constants/theme.dart';
 import '../../data/models/download_task.dart';
 import '../../data/models/format_option.dart';
+import '../../data/models/media_metadata.dart';
 import '../providers/download_provider.dart';
 import '../widgets/glassmorphic_card.dart';
 import '../widgets/custom_video_player.dart';
@@ -99,12 +100,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   Widget build(BuildContext context) {
     final provider = Provider.of<DownloadProvider>(context);
 
-    // Active downloading tasks
+    // Active downloading and failed tasks (to display errors)
     final activeTasks = provider.tasks
         .where((t) =>
             t.status == DownloadStatus.downloading ||
             t.status == DownloadStatus.pending ||
-            t.status == DownloadStatus.processing)
+            t.status == DownloadStatus.processing ||
+            t.status == DownloadStatus.failed)
         .toList();
 
     // Trigger metadata picker dialog when loaded
@@ -347,6 +349,16 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       }
     }
 
+    final bool isPlaylist = meta.url.contains('list=');
+    String preferredQuality = 'best_video';
+    List<String> selectedVideoUrls = [];
+    if (isPlaylist) {
+      selectedVideoUrls = meta.formats
+          .where((f) => f.id.startsWith('playlist_item_'))
+          .map((f) => f.originalStreamInfo as String)
+          .toList();
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -355,76 +367,220 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) {
-        return FractionallySizedBox(
-          heightFactor: 0.75,
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                // Content Title
-                Text(
-                  meta.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: LiquidGlassTheme.textDark),
-                ),
-                Text(
-                  'By ${meta.author} • ${meta.durationString}',
-                  style: const TextStyle(color: LiquidGlassTheme.textLight, fontSize: 12),
-                ),
-                const SizedBox(height: 16),
- 
-                // Formats Options List Header with Preview Button
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return FractionallySizedBox(
+              heightFactor: 0.75,
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Choose Download Format',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: LiquidGlassTheme.textDark),
-                    ),
-                    if (previewUrl != null)
-                      TextButton.icon(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          backgroundColor: LiquidGlassTheme.primaryBlue.withOpacity(0.1),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        icon: const Icon(Icons.play_arrow_rounded, color: LiquidGlassTheme.primaryBlue, size: 18),
-                        label: const Text('Play Preview', style: TextStyle(color: LiquidGlassTheme.primaryBlue, fontSize: 12, fontWeight: FontWeight.bold)),
-                        onPressed: () {
-                          _playPreview(context, previewUrl!);
-                        },
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Content Title
+                    Text(
+                      meta.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: LiquidGlassTheme.textDark),
+                    ),
+                    Text(
+                      isPlaylist 
+                          ? 'YouTube Playlist • ${meta.formats.length} Videos' 
+                          : 'By ${meta.author} • ${meta.durationString}',
+                      style: const TextStyle(color: LiquidGlassTheme.textLight, fontSize: 12),
+                    ),
+                    const SizedBox(height: 16),
+
+                    if (isPlaylist) ...[
+                      // Playlist batch controls
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: LiquidGlassTheme.primaryBlue.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: LiquidGlassTheme.primaryBlue.withOpacity(0.1)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Playlist Download Preference',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: LiquidGlassTheme.textDark),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Quality:', style: TextStyle(fontSize: 12, color: LiquidGlassTheme.textDark)),
+                                DropdownButton<String>(
+                                  value: preferredQuality,
+                                  underline: Container(),
+                                  style: const TextStyle(fontSize: 12, color: LiquidGlassTheme.primaryBlue, fontWeight: FontWeight.bold),
+                                  items: const [
+                                    DropdownMenuItem(value: 'best_video', child: Text('Best Video (HD)')),
+                                    DropdownMenuItem(value: 'fast_video', child: Text('Fast Video (360p)')),
+                                    DropdownMenuItem(value: 'audio_mp3', child: Text('Audio Only (MP3)')),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setModalState(() {
+                                        preferredQuality = val;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: LiquidGlassTheme.primaryGreen,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                                icon: const Icon(Icons.playlist_add_check_rounded, size: 20),
+                                label: Text(
+                                  'Download Selected (${selectedVideoUrls.length})',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                onPressed: selectedVideoUrls.isEmpty
+                                    ? null
+                                    : () {
+                                        Navigator.pop(ctx);
+                                        final filteredMeta = MediaMetadata(
+                                          url: meta.url,
+                                          title: meta.title,
+                                          author: meta.author,
+                                          duration: meta.duration,
+                                          thumbnailUrl: meta.thumbnailUrl,
+                                          sourceType: meta.sourceType,
+                                          formats: meta.formats
+                                              .where((f) => selectedVideoUrls.contains(f.originalStreamInfo))
+                                              .toList(),
+                                        );
+                                        provider.triggerPlaylistDownload(filteredMeta, preferredQuality);
+                                        _urlController.clear();
+                                        setState(() {});
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Starting batch download for ${selectedVideoUrls.length} tracks...')),
+                                        );
+                                      },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Select Videos to Download',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: LiquidGlassTheme.textDark),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setModalState(() {
+                                if (selectedVideoUrls.length == meta.formats.length) {
+                                  selectedVideoUrls.clear();
+                                } else {
+                                  selectedVideoUrls = meta.formats
+                                      .map((f) => f.originalStreamInfo as String)
+                                      .toList();
+                                }
+                              });
+                            },
+                            child: Text(
+                              selectedVideoUrls.length == meta.formats.length ? 'Deselect All' : 'Select All',
+                              style: const TextStyle(fontSize: 11, color: LiquidGlassTheme.primaryBlue),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Choose Download Format',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: LiquidGlassTheme.textDark),
+                          ),
+                          if (previewUrl != null)
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                backgroundColor: LiquidGlassTheme.primaryBlue.withOpacity(0.1),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: const Icon(Icons.play_arrow_rounded, color: LiquidGlassTheme.primaryBlue, size: 18),
+                              label: const Text('Play Preview', style: TextStyle(color: LiquidGlassTheme.primaryBlue, fontSize: 12, fontWeight: FontWeight.bold)),
+                              onPressed: () {
+                                _playPreview(context, previewUrl!);
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: meta.formats.isEmpty
+                          ? _buildWebViewLoginPrompt(meta.url, provider, ctx)
+                          : ListView.builder(
+                              itemCount: meta.formats.length,
+                              itemBuilder: (c, idx) {
+                                final fmt = meta.formats[idx];
+                                if (isPlaylist) {
+                                  final videoUrl = fmt.originalStreamInfo as String;
+                                  final isSelected = selectedVideoUrls.contains(videoUrl);
+                                  return CheckboxListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                                    title: Text(
+                                      fmt.label,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                    ),
+                                    subtitle: Text(
+                                      'Duration: ${fmt.sizeLabel}',
+                                      style: const TextStyle(fontSize: 11, color: LiquidGlassTheme.textLight),
+                                    ),
+                                    value: isSelected,
+                                    activeColor: LiquidGlassTheme.primaryGreen,
+                                    onChanged: (val) {
+                                      setModalState(() {
+                                        if (val == true) {
+                                          selectedVideoUrls.add(videoUrl);
+                                        } else {
+                                          selectedVideoUrls.remove(videoUrl);
+                                        }
+                                      });
+                                    },
+                                  );
+                                }
+                                return _buildFormatListTile(fmt, provider, ctx);
+                              },
+                            ),
+                    )
                   ],
                 ),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: meta.formats.isEmpty
-                      ? _buildWebViewLoginPrompt(meta.url, provider, ctx)
-                      : ListView.builder(
-                          itemCount: meta.formats.length,
-                          itemBuilder: (c, idx) {
-                            final fmt = meta.formats[idx];
-                            return _buildFormatListTile(fmt, provider, ctx);
-                          },
-                        ),
-                )
-              ],
-            ),
-          ),
+              ),
+            );
+          }
         );
       },
     ).then((_) {
@@ -558,10 +714,12 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
   Widget _buildActiveDownloadItem(DownloadTask task, DownloadProvider provider) {
     final isProcessing = task.status == DownloadStatus.processing;
+    final isFailed = task.status == DownloadStatus.failed;
 
     return GlassmorphicCard(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
+      color: isFailed ? Colors.red.withOpacity(0.06) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -573,13 +731,21 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                   task.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: LiquidGlassTheme.textDark),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: isFailed ? Colors.red[700] : LiquidGlassTheme.textDark,
+                  ),
                 ),
               ),
               IconButton(
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                icon: const Icon(Icons.cancel_outlined, color: Colors.grey, size: 20),
+                icon: Icon(
+                  isFailed ? Icons.delete_outline : Icons.cancel_outlined,
+                  color: isFailed ? Colors.red[400] : Colors.grey,
+                  size: 20,
+                ),
                 onPressed: () {
                   provider.cancelTask(task.id);
                 },
@@ -601,9 +767,12 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      task.speed,
-                      style: const TextStyle(fontSize: 10, color: LiquidGlassTheme.textLight),
-                      maxLines: 1,
+                      isFailed ? 'Error: ${task.error ?? 'Unknown error'}' : task.speed,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isFailed ? Colors.red[600] : LiquidGlassTheme.textLight,
+                      ),
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -614,14 +783,18 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    isProcessing ? 'Processing...' : _getProgressPercent(task.progress),
+                    isFailed
+                        ? 'Failed'
+                        : (isProcessing ? 'Processing...' : _getProgressPercent(task.progress)),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
-                      color: isProcessing ? LiquidGlassTheme.primaryBlue : LiquidGlassTheme.primaryGreen,
+                      color: isFailed
+                          ? Colors.red
+                          : (isProcessing ? LiquidGlassTheme.primaryBlue : LiquidGlassTheme.primaryGreen),
                     ),
                   ),
-                  if (!isProcessing) ...[
+                  if (!isProcessing && !isFailed) ...[
                     const SizedBox(height: 2),
                     Text(
                       'ETA: ${task.eta}',
@@ -638,8 +811,8 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: LinearProgressIndicator(
-              value: isProcessing ? null : _getSafeProgress(task.progress),
-              color: LiquidGlassTheme.primaryGreen,
+              value: isProcessing ? null : (isFailed ? 0.0 : _getSafeProgress(task.progress)),
+              color: isFailed ? Colors.red : LiquidGlassTheme.primaryGreen,
               backgroundColor: Colors.black.withOpacity(0.04),
               minHeight: 6,
             ),

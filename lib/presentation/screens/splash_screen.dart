@@ -12,49 +12,91 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
   late AnimationController _animationController;
+  late AnimationController _pulseController;
+  late AnimationController _shimmerController;
+  
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
+  late Animation<double> _pulseAnimation;
+  late Animation<double> _shimmerAnimation;
+  
   double _loadProgress = 0.0;
   Timer? _progressTimer;
 
   @override
   void initState() {
     super.initState();
+    
+    // Main entrance animations controller
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      duration: const Duration(milliseconds: 1600),
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.05).animate(
+    // Continuous pulse logo animation
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+
+    // Shifting shimmer gradient progress indicator
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: const Interval(0.0, 0.6, curve: Curves.elasticOut),
+        curve: const Interval(0.0, 0.7, curve: Curves.elasticOut),
       ),
     );
 
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: const Interval(0.4, 1.0, curve: Curves.easeIn),
+        curve: const Interval(0.5, 1.0, curve: Curves.easeIn),
       ),
     );
 
-    _animationController.forward();
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.04).animate(
+      CurvedAnimation(
+        parent: _pulseController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _shimmerAnimation = Tween<double>(begin: -1.0, end: 2.0).animate(
+      CurvedAnimation(
+        parent: _shimmerController,
+        curve: Curves.linear,
+      ),
+    );
+
+    _animationController.forward().then((_) {
+      if (mounted) {
+        _pulseController.repeat(reverse: true);
+      }
+    });
+    
+    _shimmerController.repeat();
     _startProgressLoader();
     _navigateToHome();
   }
 
   void _startProgressLoader() {
     _progressTimer = Timer.periodic(const Duration(milliseconds: 30), (timer) {
-      setState(() {
-        if (_loadProgress < 1.0) {
-          _loadProgress += 0.015;
-        } else {
-          _progressTimer?.cancel();
-        }
-      });
+      if (mounted) {
+        setState(() {
+          if (_loadProgress < 1.0) {
+            _loadProgress += 0.015;
+          } else {
+            _progressTimer?.cancel();
+          }
+        });
+      }
     });
   }
 
@@ -80,6 +122,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   @override
   void dispose() {
     _animationController.dispose();
+    _pulseController.dispose();
+    _shimmerController.dispose();
     _progressTimer?.cancel();
     super.dispose();
   }
@@ -94,16 +138,17 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             children: [
               // Pulser Logo Glassmorphic Container
               AnimatedBuilder(
-                animation: _animationController,
+                animation: Listenable.merge([_animationController, _pulseController]),
                 builder: (context, child) {
+                  final scale = _scaleAnimation.value * _pulseAnimation.value;
                   return Transform.scale(
-                    scale: _scaleAnimation.value,
+                    scale: scale,
                     child: Opacity(
                       opacity: _animationController.value.clamp(0.0, 1.0),
                       child: GlassmorphicCard(
                         padding: const EdgeInsets.all(24),
                         radius: 36,
-                        color: Colors.white.withOpacity(0.45),
+                        color: Colors.white.withValues(alpha: 0.45),
                         child: Container(
                           width: 130,
                           height: 130,
@@ -111,8 +156,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                             shape: BoxShape.circle,
                             gradient: LinearGradient(
                               colors: [
-                                LiquidGlassTheme.primaryBlue.withOpacity(0.3),
-                                LiquidGlassTheme.primaryGreen.withOpacity(0.3),
+                                LiquidGlassTheme.primaryBlue.withValues(alpha: 0.3),
+                                LiquidGlassTheme.primaryGreen.withValues(alpha: 0.3),
                               ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
@@ -121,11 +166,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                           child: Center(
                             child: Image.asset(
                               'assets/images/app_logo.png',
-                              width: 80,
-                              height: 80,
+                              width: 90,
+                              height: 90,
                               fit: BoxFit.contain,
                               errorBuilder: (ctx, err, stack) {
-                                // Fallback icon if logo image asset is not loaded
                                 return const Icon(
                                   Icons.play_circle_fill_rounded,
                                   size: 72,
@@ -180,16 +224,49 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 width: 180,
                 child: Column(
                   children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: LinearProgressIndicator(
-                        value: _loadProgress,
-                        color: LiquidGlassTheme.primaryGreen,
-                        backgroundColor: Colors.black.withOpacity(0.04),
-                        minHeight: 5,
+                    Container(
+                      height: 6,
+                      width: 180,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Stack(
+                        children: [
+                          AnimatedBuilder(
+                            animation: _shimmerController,
+                            builder: (context, child) {
+                              return FractionallySizedBox(
+                                widthFactor: _loadProgress.clamp(0.0, 1.0),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(10),
+                                    gradient: LinearGradient(
+                                      colors: const [
+                                        LiquidGlassTheme.primaryGreen,
+                                        LiquidGlassTheme.primaryBlue,
+                                        LiquidGlassTheme.primaryGreen,
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      transform: GradientRotation(_shimmerAnimation.value),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: LiquidGlassTheme.primaryGreen.withValues(alpha: 0.3),
+                                        blurRadius: 8,
+                                        spreadRadius: 1,
+                                      )
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     Text(
                       'Initializing Core Engine... ${( _loadProgress * 100).clamp(0, 100).toStringAsFixed(0)}%',
                       style: const TextStyle(

@@ -724,10 +724,10 @@ packages:
     dependency: "direct main"
     description:
       name: receive_sharing_intent
-      sha256: f62ba1523e7cdd6e8d870ac67e43964cce40c5ccaed303912e02d0348bc8a2bf
+      sha256: fe02f858ac9f8d44d62e1964dadded000bb48dea424085ed280d542a61c4e8ba
       url: "https://pub.dev"
     source: hosted
-    version: "1.6.0"
+    version: "1.7.0"
   record_use:
     dependency: transitive
     description:

@@ -18,6 +18,7 @@ class DownloadProvider extends ChangeNotifier {
   MediaMetadata? _analyzedMetadata;
   String? _errorMessage;
   bool _isDarkMode = false;
+  int _maxConcurrentDownloads = 2;
 
   DownloadProvider() {
     _downloader = DownloaderService(_storage);
@@ -29,10 +30,12 @@ class DownloadProvider extends ChangeNotifier {
   MediaMetadata? get analyzedMetadata => _analyzedMetadata;
   String? get errorMessage => _errorMessage;
   bool get isDarkMode => _isDarkMode;
+  int get maxConcurrentDownloads => _maxConcurrentDownloads;
 
   Future<void> _init() async {
     await _storage.init();
     _isDarkMode = _storage.getThemePreference();
+    _maxConcurrentDownloads = _storage.getMaxConcurrentDownloads();
     _loadTasks();
     // Watch storage box and update tasks reactively
     _storage.watchTasks().listen((_) {
@@ -129,6 +132,53 @@ class DownloadProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> triggerPlaylistDownload(MediaMetadata playlistMeta, String preferredQuality) async {
+    // preferredQuality can be 'best_video', 'fast_video', or 'audio_mp3'
+    for (var format in playlistMeta.formats) {
+      if (format.id.startsWith('playlist_item_')) {
+        final videoUrl = format.originalStreamInfo as String;
+        try {
+          final videoMeta = await _ytRepo.getMetadata(videoUrl);
+          if (videoMeta == null || videoMeta.formats.isEmpty) continue;
+
+          FormatOption? chosenFormat;
+          if (preferredQuality == 'audio_mp3') {
+            chosenFormat = videoMeta.formats.firstWhere(
+              (f) => f.id.startsWith('audio_mp3_'),
+              orElse: () => videoMeta.formats.firstWhere(
+                (f) => f.isAudioOnly,
+                orElse: () => videoMeta.formats.first,
+              ),
+            );
+          } else if (preferredQuality == 'fast_video') {
+            chosenFormat = videoMeta.formats.firstWhere(
+              (f) => !f.isAudioOnly && f.id.startsWith('muxed_') && f.qualityValue <= 360,
+              orElse: () => videoMeta.formats.firstWhere(
+                (f) => !f.isAudioOnly,
+                orElse: () => videoMeta.formats.first,
+              ),
+            );
+          } else {
+            chosenFormat = videoMeta.formats.firstWhere(
+              (f) => !f.isAudioOnly,
+              orElse: () => videoMeta.formats.first,
+            );
+          }
+
+          _downloader.download(
+            metadata: videoMeta,
+            format: chosenFormat,
+            onProgressUpdate: (task) {
+              _loadTasks();
+            },
+          );
+        } catch (e) {
+          print('Failed to download playlist item $videoUrl: $e');
+        }
+      }
+    }
+  }
+
   void cancelTask(String id) {
     _downloader.cancelDownload(id);
     _storage.deleteTask(id);
@@ -153,6 +203,38 @@ class DownloadProvider extends ChangeNotifier {
   Future<void> toggleTheme(bool value) async {
     _isDarkMode = value;
     await _storage.saveThemePreference(value);
+    notifyListeners();
+  }
+
+  List<String> get blockedDomains => _storage.getBlockedDomains();
+
+  Future<void> addBlockedDomain(String domain) async {
+    final list = _storage.getBlockedDomains();
+    final cleanDomain = domain.trim().toLowerCase();
+    if (cleanDomain.isNotEmpty && !list.contains(cleanDomain)) {
+      list.add(cleanDomain);
+      await _storage.saveBlockedDomains(list);
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeBlockedDomain(String domain) async {
+    final list = _storage.getBlockedDomains();
+    if (list.contains(domain)) {
+      list.remove(domain);
+      await _storage.saveBlockedDomains(list);
+      notifyListeners();
+    }
+  }
+
+  Future<void> resetBlockedDomains() async {
+    await _storage.saveBlockedDomains(List<String>.from(StorageService.defaultBlockedDomains));
+    notifyListeners();
+  }
+
+  Future<void> setMaxConcurrentDownloads(int count) async {
+    _maxConcurrentDownloads = count;
+    await _storage.saveMaxConcurrentDownloads(count);
     notifyListeners();
   }
 

@@ -10,12 +10,22 @@ import 'ffmpeg_service.dart';
 import 'storage_service.dart';
 
 class DownloaderService {
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(BaseOptions(
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    },
+    connectTimeout: const Duration(seconds: 15),
+    receiveTimeout: const Duration(seconds: 30),
+  ));
   final FFmpegService _ffmpeg = FFmpegService();
   final StorageService _storage;
 
   // Active tasks map to manage cancellations
   final Map<String, CancelToken> _cancelTokens = {};
+
+  // Queue for managing concurrent downloads
+  final List<QueuedDownload> _queue = [];
+  final Set<String> _activeTaskIds = {};
 
   DownloaderService(this._storage);
 
@@ -25,6 +35,48 @@ class DownloaderService {
     required Function(DownloadTask) onProgressUpdate,
   }) async {
     final taskId = DateTime.now().millisecondsSinceEpoch.toString();
+    final type = format.isAudioOnly ? DownloadType.audio : DownloadType.video;
+    
+    final task = DownloadTask(
+      id: taskId,
+      url: metadata.url,
+      title: metadata.title,
+      thumbnail: metadata.thumbnailUrl,
+      type: type,
+      selectedFormat: format.label,
+      status: DownloadStatus.pending,
+      speed: 'Queued...',
+      eta: '--:--',
+    );
+
+    await _storage.saveTask(task);
+    onProgressUpdate(task);
+
+    _queue.add(QueuedDownload(
+      metadata: metadata,
+      format: format,
+      onProgressUpdate: onProgressUpdate,
+      taskId: taskId,
+    ));
+
+    _processQueue();
+  }
+
+  void _processQueue() {
+    final maxConcurrent = _storage.getMaxConcurrentDownloads();
+    while (_activeTaskIds.length < maxConcurrent && _queue.isNotEmpty) {
+      final queuedItem = _queue.removeAt(0);
+      _activeTaskIds.add(queuedItem.taskId);
+      _executeDownload(queuedItem);
+    }
+  }
+
+  Future<void> _executeDownload(QueuedDownload item) async {
+    final taskId = item.taskId;
+    final metadata = item.metadata;
+    final format = item.format;
+    final onProgressUpdate = item.onProgressUpdate;
+
     final type = format.isAudioOnly ? DownloadType.audio : DownloadType.video;
     
     final task = DownloadTask(
@@ -44,16 +96,34 @@ class DownloaderService {
     _cancelTokens[taskId] = cancelToken;
 
     try {
-      // Save directly to public Downloads folder on Android, sandboxed on iOS
       Directory downloadsDir;
       if (Platform.isAndroid) {
         downloadsDir = Directory('/storage/emulated/0/Download/InstaStream');
+        try {
+          if (!await downloadsDir.exists()) {
+            await downloadsDir.create(recursive: true);
+          }
+          final testFile = File('${downloadsDir.path}/.test_write_${DateTime.now().millisecondsSinceEpoch}');
+          await testFile.writeAsString('test');
+          await testFile.delete();
+        } catch (_) {
+          final baseDir = await getExternalStorageDirectory();
+          if (baseDir != null) {
+            downloadsDir = Directory('${baseDir.path}/InstaStream');
+          } else {
+            final docDir = await getApplicationDocumentsDirectory();
+            downloadsDir = Directory('${docDir.path}/InstaStream');
+          }
+          if (!await downloadsDir.exists()) {
+            await downloadsDir.create(recursive: true);
+          }
+        }
       } else {
         final baseDir = await getApplicationDocumentsDirectory();
         downloadsDir = Directory('${baseDir.path}/InstaStream');
-      }
-      if (!await downloadsDir.exists()) {
-        await downloadsDir.create(recursive: true);
+        if (!await downloadsDir.exists()) {
+          await downloadsDir.create(recursive: true);
+        }
       }
 
       // Safe filename (remove unsupported characters)
@@ -76,7 +146,13 @@ class DownloaderService {
           if (format.id.startsWith('playlist_audio_')) {
             ytStream = manifest.audioOnly.withHighestBitrate();
           } else {
-            ytStream = manifest.muxed.withHighestVideoQuality() ?? manifest.muxed.first;
+            if (manifest.muxed.isNotEmpty) {
+              final muxedList = List<yt_exp.MuxedStreamInfo>.from(manifest.muxed);
+              muxedList.sort((a, b) => b.size.compareTo(a.size));
+              ytStream = muxedList.first;
+            } else {
+              ytStream = null;
+            }
           }
           yt.close();
         }
@@ -84,10 +160,8 @@ class DownloaderService {
         if (format.id.startsWith('muxed_') || format.id.startsWith('playlist_video_')) {
           // Progressive stream - direct download
           final outputPath = '${downloadsDir.path}/$cleanTitle.${format.ext}';
-          final streamUrl = (ytStream as yt_exp.MuxedStreamInfo).url.toString();
-          
-          await _downloadFile(
-            url: streamUrl,
+          await _downloadYoutubeStream(
+            streamInfo: ytStream as yt_exp.StreamInfo,
             savePath: outputPath,
             cancelToken: cancelToken,
             onProgress: (prog, speed, eta) async {
@@ -124,9 +198,8 @@ class DownloaderService {
           final finalOutputPath = '${downloadsDir.path}/$cleanTitle.mp4';
 
           // 1. Download video track
-          final videoStreamUrl = (ytStream as yt_exp.VideoStreamInfo).url.toString();
-          await _downloadFile(
-            url: videoStreamUrl,
+          await _downloadYoutubeStream(
+            streamInfo: ytStream as yt_exp.StreamInfo,
             savePath: tempVideoPath,
             cancelToken: cancelToken,
             onProgress: (prog, speed, eta) async {
@@ -139,9 +212,8 @@ class DownloaderService {
           );
 
           // 2. Download audio track
-          final audioStreamUrl = bestAudio.url.toString();
-          await _downloadFile(
-            url: audioStreamUrl,
+          await _downloadYoutubeStream(
+            streamInfo: bestAudio,
             savePath: tempAudioPath,
             cancelToken: cancelToken,
             onProgress: (prog, speed, eta) async {
@@ -186,10 +258,8 @@ class DownloaderService {
         } else if (format.id.startsWith('audio_raw_')) {
           // Direct raw audio download
           final outputPath = '${downloadsDir.path}/$cleanTitle.${format.ext}';
-          final streamUrl = (ytStream as yt_exp.AudioStreamInfo).url.toString();
-          
-          await _downloadFile(
-            url: streamUrl,
+          await _downloadYoutubeStream(
+            streamInfo: ytStream as yt_exp.StreamInfo,
             savePath: outputPath,
             cancelToken: cancelToken,
             onProgress: (prog, speed, eta) async {
@@ -212,10 +282,8 @@ class DownloaderService {
           // Audio download + MP3 conversion
           final tempAudioPath = '${downloadsDir.path}/${taskId}_temp_audio.m4a';
           final finalOutputPath = '${downloadsDir.path}/$cleanTitle.mp3';
-          final streamUrl = (ytStream as yt_exp.AudioStreamInfo).url.toString();
-
-          await _downloadFile(
-            url: streamUrl,
+          await _downloadYoutubeStream(
+            streamInfo: ytStream as yt_exp.StreamInfo,
             savePath: tempAudioPath,
             cancelToken: cancelToken,
             onProgress: (prog, speed, eta) async {
@@ -364,6 +432,8 @@ class DownloaderService {
       onProgressUpdate(task);
     } finally {
       _cancelTokens.remove(taskId);
+      _activeTaskIds.remove(taskId);
+      _processQueue();
     }
   }
 
@@ -399,11 +469,65 @@ class DownloaderService {
     );
   }
 
+  Future<void> _downloadYoutubeStream({
+    required yt_exp.StreamInfo streamInfo,
+    required String savePath,
+    required CancelToken cancelToken,
+    required Function(double progress, String speed, String eta) onProgress,
+  }) async {
+    final yt = yt_exp.YoutubeExplode();
+    final stream = yt.videos.streamsClient.get(streamInfo);
+    
+    final file = File(savePath);
+    if (await file.exists()) {
+      await file.delete();
+    }
+    
+    final output = file.openWrite(mode: FileMode.writeOnlyAppend);
+    final int totalBytes = streamInfo.size.totalBytes;
+    int receivedBytes = 0;
+    final startTime = DateTime.now();
+
+    try {
+      await for (final data in stream) {
+        if (cancelToken.isCancelled) {
+          await output.close();
+          yt.close();
+          return;
+        }
+        output.add(data);
+        receivedBytes += data.length;
+
+        final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+        if (elapsed > 0) {
+          final double speedBytesPerMs = receivedBytes / elapsed;
+          final double speedMbps = (speedBytesPerMs * 1000) / (1024 * 1024);
+          final String speedLabel = '${speedMbps.toStringAsFixed(1)} MB/s';
+          
+          final double progress = (totalBytes > 0) ? (receivedBytes / totalBytes).clamp(0.0, 1.0) : 0.0;
+          final remainingBytes = totalBytes - receivedBytes;
+          final etaSeconds = speedBytesPerMs > 0 ? (remainingBytes / speedBytesPerMs / 1000).round() : 0;
+          final String etaLabel = _formatDuration(Duration(seconds: etaSeconds));
+
+          onProgress(progress, speedLabel, etaLabel);
+        }
+      }
+    } finally {
+      await output.close();
+      yt.close();
+    }
+  }
+
   void cancelDownload(String taskId) {
+    _activeTaskIds.remove(taskId);
+    _queue.removeWhere((item) => item.taskId == taskId);
+
     if (_cancelTokens.containsKey(taskId)) {
       _cancelTokens[taskId]!.cancel();
       _cancelTokens.remove(taskId);
     }
+
+    _processQueue();
   }
 
   String _formatDuration(Duration duration) {
@@ -434,4 +558,18 @@ class DownloaderService {
     final milliseconds = (duration.inMilliseconds % 1000).toString().padLeft(3, '0');
     return '$hours:$minutes:$seconds,$milliseconds';
   }
+}
+
+class QueuedDownload {
+  final MediaMetadata metadata;
+  final FormatOption format;
+  final Function(DownloadTask) onProgressUpdate;
+  final String taskId;
+
+  QueuedDownload({
+    required this.metadata,
+    required this.format,
+    required this.onProgressUpdate,
+    required this.taskId,
+  });
 }

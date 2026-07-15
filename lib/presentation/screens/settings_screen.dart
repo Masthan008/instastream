@@ -111,6 +111,172 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
+          // Download Queue concurrency settings card
+          GlassmorphicCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: LiquidGlassTheme.primaryGreen.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.settings_suggest_rounded,
+                        color: LiquidGlassTheme.primaryGreen,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Text(
+                      'Download Queue Settings',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Set the maximum number of downloads that can run concurrently. Subsequent requests will be queued automatically:',
+                  style: TextStyle(fontSize: 12, color: LiquidGlassTheme.textLight),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Max Concurrent Downloads: ${downloadProvider.maxConcurrentDownloads}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ],
+                ),
+                Slider(
+                  value: downloadProvider.maxConcurrentDownloads.toDouble(),
+                  min: 1,
+                  max: 5,
+                  divisions: 4,
+                  activeColor: LiquidGlassTheme.primaryGreen,
+                  inactiveColor: Colors.black.withOpacity(0.05),
+                  label: downloadProvider.maxConcurrentDownloads.toString(),
+                  onChanged: (val) {
+                    downloadProvider.setMaxConcurrentDownloads(val.toInt());
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Dynamic Ad Blocker domains card
+          GlassmorphicCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.block, color: Colors.redAccent),
+                        ),
+                        const SizedBox(width: 16),
+                        const Text(
+                          'Ad Blocker',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        downloadProvider.resetBlockedDomains();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Ad blocker list reset to defaults')),
+                        );
+                      },
+                      child: const Text('Reset Defaults', style: TextStyle(fontSize: 12, color: LiquidGlassTheme.primaryBlue)),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Manage dynamic domains blocked in the browser tab to suppress popups and redirect ads:',
+                  style: TextStyle(fontSize: 13, color: LiquidGlassTheme.textLight),
+                ),
+                const SizedBox(height: 12),
+                
+                // Add domain input field
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.04),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: TextField(
+                          decoration: const InputDecoration(
+                            hintText: 'Enter domain (e.g. example.com)...',
+                            hintStyle: TextStyle(fontSize: 12, color: LiquidGlassTheme.textLight),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            border: InputBorder.none,
+                          ),
+                          onSubmitted: (val) {
+                            if (val.trim().isNotEmpty) {
+                              downloadProvider.addBlockedDomain(val.trim());
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // Domains list
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 180),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    physics: const ClampingScrollPhysics(),
+                    itemCount: downloadProvider.blockedDomains.length,
+                    itemBuilder: (context, index) {
+                      final domain = downloadProvider.blockedDomains[index];
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.02),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(domain, style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                            GestureDetector(
+                              onTap: () {
+                                downloadProvider.removeBlockedDomain(domain);
+                              },
+                              child: const Icon(Icons.close_rounded, size: 16, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
           // Actions Card
           GlassmorphicCard(
             child: Column(

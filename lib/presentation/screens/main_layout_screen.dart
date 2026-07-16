@@ -75,6 +75,8 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
     _intentDataStreamSubscription.cancel();
     super.dispose();
   }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       // Allow WebView to draw full height, or let gradient display behind Scaffold

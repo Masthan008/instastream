@@ -5,6 +5,32 @@ import '../models/media_metadata.dart';
 class YoutubeRepository {
   final _yt = YoutubeExplode();
 
+  Future<List<Map<String, String>>> search(String query) async {
+    try {
+      final results = await _yt.search.search(query);
+      final list = <Map<String, String>>[];
+      int count = 0;
+      for (final video in results) {
+        if (count >= 15) break;
+        list.add({
+          'id': video.id.toString(),
+          'title': video.title,
+          'author': video.author,
+          'duration': video.duration != null
+              ? '${video.duration!.inMinutes}:${(video.duration!.inSeconds % 60).toString().padLeft(2, "0")}'
+              : '--:--',
+          'url': 'https://www.youtube.com/watch?v=${video.id}',
+          'thumbnail': video.thumbnails.mediumResUrl,
+        });
+        count++;
+      }
+      return list;
+    } catch (e) {
+      print('YouTube search error: $e');
+      return [];
+    }
+  }
+
   Future<MediaMetadata?> getMetadata(String url) async {
     try {
       if (url.contains('list=')) {
@@ -33,7 +59,7 @@ class YoutubeRepository {
             return MediaMetadata(
               url: url,
               title: playlist.title,
-              author: playlist.author ?? 'YouTube Playlist',
+              author: 'YouTube Playlist',
               duration: Duration.zero,
               thumbnailUrl: playlist.thumbnails.highResUrl,
               sourceType: 'youtube',
@@ -77,10 +103,10 @@ class YoutubeRepository {
         final size = stream.size.totalMegaBytes.toStringAsFixed(1);
         formats.add(FormatOption(
           id: 'muxed_${stream.tag}',
-          label: 'Video ${stream.videoQualityLabel} (MP4 - Fast)',
+          label: 'Video ${stream.qualityLabel} (MP4 - Fast)',
           ext: 'mp4',
           sizeLabel: '$size MB',
-          qualityValue: _parseQuality(stream.videoQualityLabel),
+          qualityValue: _parseQuality(stream.qualityLabel),
           isAudioOnly: false,
           originalStreamInfo: stream,
         ));
@@ -94,7 +120,7 @@ class YoutubeRepository {
         
         formats.add(FormatOption(
           id: 'video_only_${stream.tag}',
-          label: 'Video ${stream.videoQualityLabel} (HD - Needs Muxing)${isMp4 ? "" : " [WEBM]"}',
+          label: 'Video ${stream.qualityLabel} (HD - Needs Muxing)${isMp4 ? "" : " [WEBM]"}',
           ext: isMp4 ? 'mp4' : 'webm',
           sizeLabel: '$size MB + audio',
           qualityValue: _parseQuality(stream.videoQualityLabel),

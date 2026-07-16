@@ -6,6 +6,7 @@ import '../../core/constants/theme.dart';
 import '../../data/models/download_task.dart';
 import '../../data/models/format_option.dart';
 import '../../data/models/media_metadata.dart';
+import '../../data/repositories/youtube_repository.dart';
 import '../providers/download_provider.dart';
 import '../widgets/glassmorphic_card.dart';
 import '../widgets/custom_video_player.dart';
@@ -19,8 +20,12 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingObserver {
   final TextEditingController _urlController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+  final YoutubeRepository _ytRepo = YoutubeRepository();
   String _lastClipboardUrl = '';
   bool _showClipboardPrompt = false;
+  bool _isSearching = false;
+  List<Map<String, String>> _searchResults = [];
 
   @override
   void initState() {
@@ -33,6 +38,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _urlController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -297,9 +303,135 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               ),
             ),
 
+          // YouTube Search section
+          const SizedBox(height: 12),
+          const Text(
+            'Search YouTube',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: LiquidGlassTheme.textDark),
+          ),
+          const SizedBox(height: 8),
+          GlassmorphicCard(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Search videos...',
+                          hintStyle: const TextStyle(color: LiquidGlassTheme.textLight, fontSize: 13),
+                          filled: true,
+                          fillColor: Colors.black.withOpacity(0.04),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 18, color: LiquidGlassTheme.textLight),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _searchResults = []);
+                                  },
+                                )
+                              : null,
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                        onChanged: (_) => setState(() {}),
+                        onSubmitted: (_) => _searchYouTube(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      height: 42,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: _isSearching || _searchController.text.trim().isEmpty ? null : _searchYouTube,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            gradient: LiquidGlassTheme.brandGradient,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: _isSearching
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : const Icon(Icons.search, color: Colors.white, size: 20),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_searchResults.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 200,
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _searchResults.length,
+                      itemBuilder: (ctx, i) {
+                        final result = _searchResults[i];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.03),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                            dense: true,
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.network(
+                                result['thumbnail'] ?? '',
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  width: 48, height: 48,
+                                  color: Colors.black.withOpacity(0.04),
+                                  child: const Icon(Icons.movie, size: 20, color: Colors.grey),
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              result['title'] ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Text(
+                              '${result['author']} • ${result['duration']}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 10, color: LiquidGlassTheme.textLight),
+                            ),
+                            trailing: const Icon(Icons.download_rounded, size: 18, color: LiquidGlassTheme.primaryGreen),
+                            onTap: () {
+                              _urlController.text = result['url'] ?? '';
+                              provider.analyzeLink(result['url'] ?? '');
+                              setState(() => _searchResults = []);
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
           // Active Downloads list section
           if (activeTasks.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             const Text(
               'Active Downloads',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: LiquidGlassTheme.textDark),
@@ -318,6 +450,17 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         ],
       ),
     );
+  }
+
+  Future<void> _searchYouTube() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+    setState(() => _isSearching = true);
+    final results = await _ytRepo.search(query);
+    setState(() {
+      _isSearching = false;
+      _searchResults = results;
+    });
   }
 
   bool _isDialogActive = false;
@@ -1020,6 +1163,16 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
                   ),
                 ),
               ),
+              if (isFailed)
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.refresh_rounded, color: LiquidGlassTheme.primaryGreen, size: 20),
+                  tooltip: 'Retry Download',
+                  onPressed: () {
+                    provider.retryTask(task.id);
+                  },
+                ),
               IconButton(
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),

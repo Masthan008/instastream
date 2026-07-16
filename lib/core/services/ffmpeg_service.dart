@@ -8,6 +8,7 @@ class FFmpegService {
     required String videoPath,
     required String audioPath,
     required String outputPath,
+    bool reencodeVideo = false,
   }) async {
     // If the output file already exists, delete it first to avoid prompt blocks
     final file = File(outputPath);
@@ -15,13 +16,14 @@ class FFmpegService {
       await file.delete();
     }
 
-    // Command: merge video and audio, copy video stream, convert/encode audio to aac
-    // -map 0:v:0 maps the video stream of the 1st input
-    // -map 1:a:0 maps the audio stream of the 2nd input
     final cleanVideoPath = videoPath.replaceAll('\\', '/');
     final cleanAudioPath = audioPath.replaceAll('\\', '/');
     final cleanOutputPath = outputPath.replaceAll('\\', '/');
-    final cmd = '-i "$cleanVideoPath" -i "$cleanAudioPath" -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -y "$cleanOutputPath"';
+
+    // When video is VP9/webm, re-encode to h264 for MP4 compatibility.
+    // When video is h264, stream-copy (fast) and re-encode audio to aac.
+    final videoCodec = reencodeVideo ? 'libx264' : 'copy';
+    final cmd = '-i "$cleanVideoPath" -i "$cleanAudioPath" -c:v $videoCodec -c:a aac -map 0:v:0 -map 1:a:0 -y "$cleanOutputPath"';
     
     print('FFmpeg starting merge: $cmd');
     final session = await FFmpegKit.execute(cmd);

@@ -84,7 +84,7 @@ class LiquidGlassTheme {
         seedColor: primaryGreen,
         primary: primaryGreen,
         secondary: primaryBlue,
-        background: backgroundStart,
+        surface: backgroundStart,
       ),
       scaffoldBackgroundColor: Colors.transparent, // transparency allows gradient background to show through
       textTheme: GoogleFonts.outfitTextTheme().copyWith(
@@ -119,7 +119,7 @@ class LiquidGlassTheme {
         primary: primaryGreen,
         secondary: primaryBlue,
         brightness: Brightness.dark,
-        background: darkBackgroundStart,
+        surface: darkBackgroundStart,
       ),
       scaffoldBackgroundColor: Colors.transparent,
       textTheme: GoogleFonts.outfitTextTheme().copyWith(

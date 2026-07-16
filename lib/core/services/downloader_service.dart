@@ -15,8 +15,10 @@ class DownloaderService {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     },
-    connectTimeout: const Duration(seconds: 15),
-    receiveTimeout: const Duration(seconds: 30),
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 60),
+    followRedirects: true,
+    maxRedirects: 5,
   ));
   final FFmpegService _ffmpeg = FFmpegService();
   final StorageService _storage;
@@ -214,18 +216,34 @@ class DownloaderService {
           onProgressUpdate(task);
 
           final yt = yt_exp.YoutubeExplode();
-          final videoId = yt_exp.VideoId.parseVideoId(metadata.url)!;
+          final videoId = yt_exp.VideoId.parseVideoId(metadata.url);
+          if (videoId == null) {
+            task.status = DownloadStatus.failed;
+            task.error = 'Could not parse video ID from URL';
+            await _storage.saveTask(task);
+            onProgressUpdate(task);
+            yt.close();
+            return;
+          }
           final manifest = await yt.videos.streamsClient.getManifest(videoId);
           final bestAudio = manifest.audioOnly.withHighestBitrate();
           yt.close();
 
-          final tempVideoPath = '${downloadsDir.path}/${taskId}_temp_video.mp4';
-          final tempAudioPath = '${downloadsDir.path}/${taskId}_temp_audio.m4a';
+          // Use correct extensions matching the actual stream container format
+          final videoStreamInfo = ytStream as yt_exp.VideoStreamInfo;
+          final audioStreamInfo = bestAudio;
+          final videoContainer = videoStreamInfo.container.toString();
+          final audioContainer = audioStreamInfo.container.toString();
+          final videoExt = videoContainer.contains('webm') ? 'webm' : 'mp4';
+          final audioExt = audioContainer.contains('webm') ? 'webm' : 'm4a';
+
+          final tempVideoPath = '${downloadsDir.path}/${taskId}_temp_video.$videoExt';
+          final tempAudioPath = '${downloadsDir.path}/${taskId}_temp_audio.$audioExt';
           final finalOutputPath = '${downloadsDir.path}/$cleanTitle.mp4';
 
           // 1. Download video track
           await _downloadYoutubeStream(
-            streamInfo: ytStream as yt_exp.StreamInfo,
+            streamInfo: videoStreamInfo,
             savePath: tempVideoPath,
             cancelToken: cancelToken,
             onProgress: (prog, speed, eta) async {
@@ -239,7 +257,7 @@ class DownloaderService {
 
           // 2. Download audio track
           await _downloadYoutubeStream(
-            streamInfo: bestAudio,
+            streamInfo: audioStreamInfo,
             savePath: tempAudioPath,
             cancelToken: cancelToken,
             onProgress: (prog, speed, eta) async {
@@ -258,11 +276,22 @@ class DownloaderService {
           await _storage.saveTask(task);
           onProgressUpdate(task);
 
-          final success = await _ffmpeg.mergeVideoAndAudio(
-            videoPath: tempVideoPath,
-            audioPath: tempAudioPath,
-            outputPath: finalOutputPath,
-          );
+          final bool success;
+          if (videoExt == 'webm') {
+            // VP9/webm video cannot be stream-copied into MP4; re-encode video
+            success = await _ffmpeg.mergeVideoAndAudio(
+              videoPath: tempVideoPath,
+              audioPath: tempAudioPath,
+              outputPath: finalOutputPath,
+              reencodeVideo: true,
+            );
+          } else {
+            success = await _ffmpeg.mergeVideoAndAudio(
+              videoPath: tempVideoPath,
+              audioPath: tempAudioPath,
+              outputPath: finalOutputPath,
+            );
+          }
 
           try {
             await File(tempVideoPath).delete();
@@ -378,15 +407,24 @@ class DownloaderService {
 
       } else if (metadata.sourceType == 'instagram') {
         final directLink = format.originalStreamInfo as String;
+        final isVideoUrl = directLink.contains('.mp4') || format.ext == 'mp4';
         final Map<String, dynamic> igHeaders = {
           'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-          'Accept': '*/*',
-          'Accept-Encoding': 'identity',
+          'Accept': isVideoUrl ? 'video/mp4,*/*' : '*/*',
+          'Accept-Encoding': 'gzip, deflate',
           'Referer': 'https://www.instagram.com/',
-          'Sec-Fetch-Dest': 'video',
+          'Origin': 'https://www.instagram.com',
+          'Sec-Fetch-Dest': isVideoUrl ? 'video' : 'image',
           'Sec-Fetch-Mode': 'no-cors',
           'Sec-Fetch-Site': 'cross-site',
+          'Connection': 'keep-alive',
         };
+        // Use longer timeouts for Instagram (larger files, slower CDN)
+        final igOptions = Options(
+          headers: igHeaders,
+          receiveTimeout: const Duration(seconds: 120),
+          sendTimeout: const Duration(seconds: 60),
+        );
 
         if (format.id.contains('mp3')) {
           // Download video + convert to audio (MP3)
@@ -397,7 +435,7 @@ class DownloaderService {
             url: directLink,
             savePath: tempVideoPath,
             cancelToken: cancelToken,
-            headers: igHeaders,
+            customOptions: igOptions,
             onProgress: (prog, speed, eta) async {
               task.progress = prog * 0.8;
               task.speed = 'Downloading video: $speed';
@@ -444,7 +482,7 @@ class DownloaderService {
             url: directLink,
             savePath: outputPath,
             cancelToken: cancelToken,
-            headers: igHeaders,
+            customOptions: igOptions,
             onProgress: (prog, speed, eta) async {
               task.progress = prog;
               task.speed = speed;
@@ -480,16 +518,17 @@ class DownloaderService {
     required CancelToken cancelToken,
     required Function(double progress, String speed, String eta) onProgress,
     Map<String, dynamic>? headers,
+    Options? customOptions,
   }) async {
     final startTime = DateTime.now();
     
+    final effectiveOptions = customOptions ?? Options(headers: headers);
+
     await _dio.download(
       url,
       savePath,
       cancelToken: cancelToken,
-      options: Options(
-        headers: headers,
-      ),
+      options: effectiveOptions,
       onReceiveProgress: (received, total) {
         if (total != -1) {
           final elapsed = DateTime.now().difference(startTime).inMilliseconds;

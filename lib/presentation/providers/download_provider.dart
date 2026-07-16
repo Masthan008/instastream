@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../core/services/downloader_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../data/models/download_task.dart';
 import '../../data/models/format_option.dart';
@@ -13,6 +14,7 @@ class DownloadProvider extends ChangeNotifier {
   final StorageService _storage = StorageService();
   late final DownloaderService _downloader;
   final YoutubeRepository _ytRepo = YoutubeRepository();
+  final NotificationService _notif = NotificationService();
   final InstagramRepository _igRepo = InstagramRepository();
 
   List<DownloadTask> _tasks = [];
@@ -39,10 +41,44 @@ class DownloadProvider extends ChangeNotifier {
     _isDarkMode = _storage.getThemePreference();
     _maxConcurrentDownloads = _storage.getMaxConcurrentDownloads();
     _loadTasks();
-    // Watch storage box and update tasks reactively
+    await _notif.init();
     _storage.watchTasks().listen((_) {
       _loadTasks();
     });
+  }
+
+  void _onProgress(DownloadTask task) {
+    _loadTasks();
+    final notifId = task.id.hashCode;
+    if (task.status == DownloadStatus.completed) {
+      _notif.showCompletionNotification(
+        id: notifId,
+        title: task.title,
+        filePath: task.filePath ?? '',
+      );
+    } else if (task.status == DownloadStatus.failed) {
+      _notif.showProgressNotification(
+        id: notifId,
+        title: 'Download Failed',
+        message: task.error ?? 'Unknown error',
+        progress: 100,
+      );
+    } else if (task.status == DownloadStatus.processing) {
+      _notif.showProgressNotification(
+        id: notifId,
+        title: task.title,
+        message: 'Processing...',
+        progress: 100,
+        indeterminate: true,
+      );
+    } else {
+      _notif.showProgressNotification(
+        id: notifId,
+        title: task.title,
+        message: task.speed,
+        progress: (task.progress * 100).round(),
+      );
+    }
   }
 
   void _loadTasks() {
@@ -97,12 +133,14 @@ class DownloadProvider extends ChangeNotifier {
     }
   }
 
-  void applyDirectInstagramLink(String originalUrl, String directUrl, bool isVideo, {String? title}) {
+  void applyDirectInstagramLink(String originalUrl, String directUrl, bool isVideo, {String? title, String? thumbnailUrl, String? username}) {
     final meta = _igRepo.buildMetadataFromDirectLink(
       originalUrl: originalUrl,
       directLink: directUrl,
       isVideo: isVideo,
       title: title,
+      username: username,
+      thumbnailUrl: thumbnailUrl,
     );
     _analyzedMetadata = meta;
     notifyListeners();
@@ -121,13 +159,15 @@ class DownloadProvider extends ChangeNotifier {
   Future<void> triggerDownload(FormatOption format) async {
     if (_analyzedMetadata == null) return;
     
+    if (smartModeEnabled) {
+      await savePreferredFormat(_analyzedMetadata!.sourceType, format.id);
+    }
+    
     // Trigger download asynchronously so it doesn't block UI
     _downloader.download(
       metadata: _analyzedMetadata!,
       format: format,
-      onProgressUpdate: (task) {
-        _loadTasks();
-      },
+      onProgressUpdate: _onProgress,
     );
     
     _analyzedMetadata = null;
@@ -170,9 +210,7 @@ class DownloadProvider extends ChangeNotifier {
           _downloader.download(
             metadata: videoMeta,
             format: chosenFormat,
-            onProgressUpdate: (task) {
-              _loadTasks();
-            },
+            onProgressUpdate: _onProgress,
           );
         } catch (e) {
           print('Failed to download playlist item $videoUrl: $e');
@@ -184,11 +222,13 @@ class DownloadProvider extends ChangeNotifier {
   void cancelTask(String id) {
     _downloader.cancelDownload(id);
     _storage.deleteTask(id);
+    _notif.cancelNotification(id.hashCode);
     _loadTasks();
   }
 
   Future<void> deleteTask(String id) async {
     _storage.deleteTask(id);
+    _notif.cancelNotification(id.hashCode);
     _loadTasks();
   }
 
@@ -200,6 +240,43 @@ class DownloadProvider extends ChangeNotifier {
   Future<void> addCompletedTask(DownloadTask task) async {
     await _storage.saveTask(task);
     _loadTasks();
+  }
+
+  Future<void> retryTask(String taskId) async {
+    final taskIdx = _tasks.indexWhere((t) => t.id == taskId);
+    if (taskIdx == -1) return;
+    final task = _tasks[taskIdx];
+    if (task.status != DownloadStatus.failed) return;
+
+    task.status = DownloadStatus.pending;
+    task.progress = 0.0;
+    task.speed = 'Retrying...';
+    task.error = null;
+    await _storage.saveTask(task);
+    _loadTasks();
+
+    final meta = MediaMetadata(
+      url: task.url,
+      title: task.title,
+      author: '',
+      duration: Duration.zero,
+      thumbnailUrl: task.thumbnail,
+      sourceType: task.url.contains('youtube') || task.url.contains('youtu.be') ? 'youtube' : 'instagram',
+      formats: [
+        FormatOption(
+          id: task.selectedFormat,
+          label: task.selectedFormat,
+          ext: task.filePath?.split('.').last ?? 'mp4',
+          sizeLabel: 'Unknown',
+          qualityValue: 0,
+          isAudioOnly: task.type == DownloadType.audio,
+          originalStreamInfo: task.url,
+        ),
+      ],
+    );
+
+    _analyzedMetadata = meta;
+    notifyListeners();
   }
 
   Future<void> toggleTheme(bool value) async {
@@ -238,6 +315,21 @@ class DownloadProvider extends ChangeNotifier {
     _maxConcurrentDownloads = count;
     await _storage.saveMaxConcurrentDownloads(count);
     notifyListeners();
+  }
+
+  bool get smartModeEnabled => _storage.getSmartModeEnabled();
+
+  Future<void> setSmartModeEnabled(bool enabled) async {
+    await _storage.saveSmartModeEnabled(enabled);
+    notifyListeners();
+  }
+
+  String? getPreferredFormat(String sourceType) {
+    return _storage.getPreferredFormat(sourceType);
+  }
+
+  Future<void> savePreferredFormat(String sourceType, String formatId) async {
+    await _storage.savePreferredFormat(sourceType, formatId);
   }
 
   Future<bool> checkAndRequestStoragePermission() async {

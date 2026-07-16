@@ -98,7 +98,7 @@ class SettingsScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  activeColor: LiquidGlassTheme.primaryGreen,
+                  activeThumbColor: LiquidGlassTheme.primaryGreen,
                   title: const Text('Obsidian Dark Mode', style: TextStyle(fontWeight: FontWeight.w500)),
                   subtitle: const Text('Toggle between Light and premium Dark mode styles', style: TextStyle(fontSize: 12)),
                   value: downloadProvider.isDarkMode,
@@ -131,7 +131,7 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     const SizedBox(width: 16),
                     const Text(
-                      'Download Queue Settings',
+                      'Download Settings',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ],
@@ -161,6 +161,16 @@ class SettingsScreen extends StatelessWidget {
                   label: downloadProvider.maxConcurrentDownloads.toString(),
                   onChanged: (val) {
                     downloadProvider.setMaxConcurrentDownloads(val.toInt());
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  activeThumbColor: LiquidGlassTheme.primaryGreen,
+                  title: const Text('Smart Mode', style: TextStyle(fontWeight: FontWeight.w500)),
+                  subtitle: const Text('Remember download format preferences and auto-apply them', style: TextStyle(fontSize: 12)),
+                  value: downloadProvider.smartModeEnabled,
+                  onChanged: (val) {
+                    downloadProvider.setSmartModeEnabled(val);
                   },
                 ),
               ],

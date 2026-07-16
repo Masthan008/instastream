@@ -84,4 +84,20 @@ class StorageService {
   Future<void> saveMaxConcurrentDownloads(int count) async {
     await _box.put('max_concurrent_downloads', count);
   }
+
+  bool getSmartModeEnabled() {
+    return _box.get('smart_mode', defaultValue: false) as bool;
+  }
+
+  Future<void> saveSmartModeEnabled(bool enabled) async {
+    await _box.put('smart_mode', enabled);
+  }
+
+  String? getPreferredFormat(String sourceType) {
+    return _box.get('preferred_format_$sourceType') as String?;
+  }
+
+  Future<void> savePreferredFormat(String sourceType, String formatId) async {
+    await _box.put('preferred_format_$sourceType', formatId);
+  }
 }

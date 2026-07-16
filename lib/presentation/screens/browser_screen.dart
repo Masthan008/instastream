@@ -3,7 +3,6 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/theme.dart';
 import '../providers/download_provider.dart';
-import '../widgets/glassmorphic_card.dart';
 
 class BrowserScreen extends StatefulWidget {
   const BrowserScreen({Key? key}) : super(key: key);
@@ -45,6 +44,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _detectMedia(String url) {
     final bool hasMedia = url.contains('youtube.com/watch') ||
         url.contains('youtu.be/') ||
+        url.contains('youtube.com/shorts/') ||
         url.contains('instagram.com/reel/') ||
         url.contains('instagram.com/p/') ||
         url.contains('instagram.com/stories/') ||
@@ -86,30 +86,43 @@ class _BrowserScreenState extends State<BrowserScreen> {
         // Run Javascript to scrape DOM video or image elements
         final result = await _webViewController!.evaluateJavascript(source: """
           (function() {
+            function extractThumbnail(videoEl) {
+              return videoEl.poster || '';
+            }
+            
+            function extractOgImage() {
+              var ogImg = document.querySelector('meta[property=\\"og:image\\"]');
+              return ogImg ? ogImg.content : '';
+            }
+            
             // 1. Try to find active video (stories, reels, posts)
             var video = document.querySelector('video');
             if (video && video.src && !video.src.startsWith('blob:')) {
-              return { 'url': video.src, 'type': 'video', 'title': document.title || 'Instagram Video' };
+              var thumb = extractThumbnail(video) || extractOgImage();
+              return { 'url': video.src, 'type': 'video', 'title': document.title || 'Instagram Video', 'thumbnail': thumb };
             }
             
             // 2. Try to find carousel/slides
             var post = document.querySelector('article') || document;
             var slides = [];
+            var seenUrls = [];
             
             var videos = post.querySelectorAll('video');
             videos.forEach(function(v) {
-              if (v.src && !v.src.startsWith('blob:') && slides.indexOf(v.src) === -1) {
-                slides.push({ 'url': v.src, 'type': 'video' });
+              if (v.src && !v.src.startsWith('blob:') && seenUrls.indexOf(v.src) === -1) {
+                seenUrls.push(v.src);
+                slides.push({ 'url': v.src, 'type': 'video', 'thumbnail': extractThumbnail(v) });
               }
             });
             
             var images = post.querySelectorAll('ul li img');
             if (images.length === 0) {
-              images = post.querySelectorAll('img[style*="object-fit: cover"]');
+              images = post.querySelectorAll('img[style*=\\"object-fit: cover\\"]');
             }
             images.forEach(function(img) {
-              if (img.src && slides.map(function(s) { return s.url; }).indexOf(img.src) === -1) {
-                slides.push({ 'url': img.src, 'type': 'image' });
+              if (img.src && seenUrls.indexOf(img.src) === -1) {
+                seenUrls.push(img.src);
+                slides.push({ 'url': img.src, 'type': 'image', 'thumbnail': img.src });
               }
             });
             
@@ -118,12 +131,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
             }
             
             // 3. Fallback for single image (posts or stories/highlights)
-            var storyImg = document.querySelector('img[decoding="sync"]') || 
+            var storyImg = document.querySelector('img[decoding=\\"sync\\"]') || 
                            document.querySelector('section img') || 
                            document.querySelector('article img') || 
                            document.querySelector('img[srcset]');
             if (storyImg && storyImg.src) {
-              return { 'url': storyImg.src, 'type': 'image', 'title': document.title || 'Instagram Image' };
+              return { 'url': storyImg.src, 'type': 'image', 'title': document.title || 'Instagram Image', 'thumbnail': storyImg.src };
             }
             return null;
           })()
@@ -143,11 +156,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
             // It is a single media item
             final String directUrl = result['url'];
             final String type = result['type'];
+            final String thumbnail = result['thumbnail'] ?? '';
             provider.applyDirectInstagramLink(
               currentUrl, 
               directUrl, 
               type == 'video',
               title: title,
+              thumbnailUrl: thumbnail.isNotEmpty ? thumbnail : null,
             );
             _showDashboardRedirectToast();
           } else {

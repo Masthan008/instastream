@@ -20,7 +20,7 @@ class GalleryScreen extends StatefulWidget {
 }
 
 class _GalleryScreenState extends State<GalleryScreen> {
-  bool _showVideos = true;
+  int _selectedTab = 0; // 0=Videos, 1=Images, 2=Audio
   String? _currentlyPlayingAudioPath;
   String? _currentlyPlayingAudioTitle;
   final FFmpegService _ffmpeg = FFmpegService();
@@ -36,8 +36,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
         .toList();
         
     final filteredTasks = completedTasks.where((t) {
-      if (_showVideos) {
+      if (_selectedTab == 0) {
         return t.type == DownloadType.video;
+      } else if (_selectedTab == 1) {
+        return t.type == DownloadType.image;
       } else {
         return t.type == DownloadType.audio;
       }
@@ -63,15 +65,21 @@ class _GalleryScreenState extends State<GalleryScreen> {
                 ),
                 child: Row(
                   children: [
-                    _buildToggleBtn('Videos', _showVideos, () {
+                    _buildToggleBtn('Videos', _selectedTab == 0, () {
                       setState(() {
-                        _showVideos = true;
+                        _selectedTab = 0;
                         _currentlyPlayingAudioPath = null;
                       });
                     }),
-                    _buildToggleBtn('Audio', !_showVideos, () {
+                    _buildToggleBtn('Images', _selectedTab == 1, () {
                       setState(() {
-                        _showVideos = false;
+                        _selectedTab = 1;
+                        _currentlyPlayingAudioPath = null;
+                      });
+                    }),
+                    _buildToggleBtn('Audio', _selectedTab == 2, () {
+                      setState(() {
+                        _selectedTab = 2;
                       });
                     }),
                   ],
@@ -81,7 +89,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
           ),
         ),
 
-        if (!_showVideos && _currentlyPlayingAudioPath != null)
+        if (_selectedTab == 2 && _currentlyPlayingAudioPath != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
             child: Column(
@@ -181,13 +189,21 @@ class _GalleryScreenState extends State<GalleryScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            _showVideos ? Icons.video_library_outlined : Icons.audio_file_outlined,
+            _selectedTab == 0
+                ? Icons.video_library_outlined
+                : _selectedTab == 1
+                    ? Icons.photo_library_outlined
+                    : Icons.audio_file_outlined,
             size: 64,
             color: LiquidGlassTheme.textLight.withOpacity(0.4),
           ),
           const SizedBox(height: 16),
           Text(
-            _showVideos ? 'No videos downloaded yet' : 'No audio files downloaded yet',
+            _selectedTab == 0
+                ? 'No videos downloaded yet'
+                : _selectedTab == 1
+                    ? 'No images downloaded yet'
+                    : 'No audio files downloaded yet',
             style: const TextStyle(fontWeight: FontWeight.bold, color: LiquidGlassTheme.textLight),
           ),
         ],
@@ -218,34 +234,62 @@ class _GalleryScreenState extends State<GalleryScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: 80,
-              height: 80,
-              color: Colors.black.withOpacity(0.04),
-              child: task.thumbnail.isNotEmpty
-                  ? (task.thumbnail.startsWith('/') || task.thumbnail.startsWith('file://'))
-                      ? Image.file(
-                          File(task.thumbnail.replaceAll('file://', '')),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(
-                            task.type == DownloadType.video ? Icons.movie_creation : Icons.music_note,
-                            color: LiquidGlassTheme.primaryBlue,
-                          ),
-                        )
-                      : Image.network(
-                          task.thumbnail,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(
-                            task.type == DownloadType.video ? Icons.movie_creation : Icons.music_note,
-                            color: LiquidGlassTheme.primaryBlue,
-                          ),
-                        )
-                  : Icon(
-                      task.type == DownloadType.video ? Icons.movie_creation : Icons.music_note,
-                      color: LiquidGlassTheme.primaryBlue,
-                    ),
+          GestureDetector(
+            onTap: fileExists
+                ? () {
+                    if (task.type == DownloadType.video) {
+                      _playVideo(task.filePath!, task.title);
+                    } else if (task.type == DownloadType.image) {
+                      _previewImage(task.filePath!, task.title);
+                    } else {
+                      setState(() {
+                        _currentlyPlayingAudioPath = task.filePath;
+                        _currentlyPlayingAudioTitle = task.title;
+                      });
+                    }
+                  }
+                : null,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: 80,
+                height: 80,
+                color: Colors.black.withOpacity(0.04),
+                child: task.thumbnail.isNotEmpty
+                    ? (task.thumbnail.startsWith('/') || task.thumbnail.startsWith('file://'))
+                        ? Image.file(
+                            File(task.thumbnail.replaceAll('file://', '')),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Icon(
+                              task.type == DownloadType.video
+                                  ? Icons.movie_creation
+                                  : task.type == DownloadType.image
+                                      ? Icons.image
+                                      : Icons.music_note,
+                              color: LiquidGlassTheme.primaryBlue,
+                            ),
+                          )
+                        : Image.network(
+                            task.thumbnail,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Icon(
+                              task.type == DownloadType.video
+                                  ? Icons.movie_creation
+                                  : task.type == DownloadType.image
+                                      ? Icons.image
+                                      : Icons.music_note,
+                              color: LiquidGlassTheme.primaryBlue,
+                            ),
+                          )
+                    : Icon(
+                        task.type == DownloadType.video
+                            ? Icons.movie_creation
+                            : task.type == DownloadType.image
+                                ? Icons.image
+                                : Icons.music_note,
+                        color: LiquidGlassTheme.primaryBlue,
+                      ),
+              ),
             ),
           ),
           const SizedBox(width: 14),
@@ -322,41 +366,71 @@ class _GalleryScreenState extends State<GalleryScreen> {
                         },
                       ),
                       const SizedBox(width: 4),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                      if (task.type == DownloadType.image)
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          onPressed: () {
+                            _previewImage(task.filePath!, task.title);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              gradient: LiquidGlassTheme.brandGradient,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.visibility_rounded, size: 16, color: Colors.white),
+                                SizedBox(width: 4),
+                                Text('View', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          onPressed: () {
+                            if (task.type == DownloadType.video) {
+                              _playVideo(task.filePath!, task.title);
+                            } else {
+                              setState(() {
+                                _currentlyPlayingAudioPath = task.filePath;
+                                _currentlyPlayingAudioTitle = task.title;
+                              });
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              gradient: LiquidGlassTheme.brandGradient,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.play_arrow_rounded, size: 16, color: Colors.white),
+                                SizedBox(width: 4),
+                                Text('Play', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                              ],
+                            ),
                           ),
                         ),
-                        onPressed: () {
-                          if (task.type == DownloadType.video) {
-                            _playVideo(task.filePath!, task.title);
-                          } else {
-                            setState(() {
-                              _currentlyPlayingAudioPath = task.filePath;
-                              _currentlyPlayingAudioTitle = task.title;
-                            });
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            gradient: LiquidGlassTheme.brandGradient,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.play_arrow_rounded, size: 16, color: Colors.white),
-                              SizedBox(width: 4),
-                              Text('Play', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
-                            ],
-                          ),
-                        ),
-                      ),
                     ],
                   )
                 else
@@ -372,6 +446,67 @@ class _GalleryScreenState extends State<GalleryScreen> {
           )
         ],
       ),
+    );
+  }
+
+  void _previewImage(String path, String title) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return AlertDialog(
+          backgroundColor: Colors.transparent,
+          contentPadding: EdgeInsets.zero,
+          content: GlassmorphicCard(
+            padding: const EdgeInsets.all(16),
+            radius: 28,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: isDark ? Colors.white : LiquidGlassTheme.textDark,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.6,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.file(
+                      File(path),
+                      fit: BoxFit.contain,
+                      width: double.infinity,
+                      errorBuilder: (_, __, ___) => const Padding(
+                        padding: EdgeInsets.all(40),
+                        child: Icon(Icons.broken_image_outlined, size: 48, color: Colors.grey),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -457,8 +592,8 @@ class _GalleryScreenState extends State<GalleryScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
-        return WillPopScope(
-          onWillPop: () async => false,
+        return PopScope(
+          canPop: false,
           child: AlertDialog(
             backgroundColor: Colors.white,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
